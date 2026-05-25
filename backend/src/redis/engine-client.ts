@@ -25,19 +25,31 @@ export async function sendToEngine(type: EngineCommandType, payload: Record<stri
     payload,
   }
 
-  await publisher.lPush(enginequeue, JSON.stringify(message))
+  await publisher.xAdd(enginequeue,"*",  {data : JSON.stringify(message)})
   return responsePromise
 }
 
 
 export async function listenForEngineResponse() {
   for (;;) {
-    const payload = await subscriber.brPop(backendQueue, 0)
-    if (!payload) continue;
+    const items = await subscriber.xRead([{
+      key : backendQueue,
+      id : "$"
+    }],{
+      BLOCK : 1000,
+      COUNT : 10
+    })
+
 
     try {
-      const parsedResponse = JSON.parse(payload.element) as EngineResponse;
-      resolveEngineResponse(parsedResponse);
+      for(const stream of items){
+            for(const msg of stream.messages){
+              const id = msg.id
+      
+              const parsedResponse = JSON.parse(msg.message.data) as EngineResponse
+              resolveEngineResponse(parsedResponse);
+
+            }}
     } catch (error) {
       console.error("Invalid engine response", error);
     }

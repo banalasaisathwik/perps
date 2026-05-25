@@ -45,7 +45,7 @@ await Promise.all([brokerClient.connect(), responseClient.connect()]);
 const engineQueue = process.env.ENGINE_QUEUE ?? "backend-engine-queue";
 
 async function sendResponse(responseQueue: string, response: EngineResponse): Promise<void> {
-  await responseClient.lPush(responseQueue, JSON.stringify(response));
+  await responseClient.xAdd(responseQueue,"*",{data: JSON.stringify(response)});
 }
 
 function handleEngineRequest(message: OrderRequest): unknown {
@@ -68,21 +68,28 @@ switch (message.type) {
 console.log(`Engine listening on Redis queue: ${engineQueue}`);
 
 for (;;) {
-  const item = await brokerClient.brPop(engineQueue, 0);
-  if (!item) continue;
+  const items = await brokerClient.xRead([
+    {
+      key : engineQueue,
+      id : "$"
+    }
+  ],{
+    BLOCK : 1000,
+    COUNT : 10
+  });
+  if (!items) continue;
 
-  let message: BrokerMessage;
 
   try {
-    message = JSON.parse(item.element) as BrokerMessage;
-  } catch {
-    console.error("Skipping invalid broker message");
-    continue;
-  }
+    for(const stream of items){
+      for(const msg of stream.messages){
+        const id = msg.id
 
-  if (message.type === "mark_price") {
+        const parsedData = JSON.parse(msg.message.data) as BrokerMessage
+
+        if (parsedData.type === "mark_price") {
     try {
-      liquidation(message);
+      liquidation(parsedData);
     } catch (error) {
       console.error("Failed to process mark price", error);
     }
@@ -90,18 +97,27 @@ for (;;) {
   }
 
   try {
-    const data = handleEngineRequest(message);
+    const data = handleEngineRequest(parsedData);
 
-    await sendResponse(message.responseQueue, {
-      correlationId: message.correlationId,
+    await sendResponse(parsedData.responseQueue, {
+      correlationId: parsedData.correlationId,
       ok: true,
       data,
     });
   } catch (error) {
-    await sendResponse(message.responseQueue, {
-      correlationId: message.correlationId,
+    await sendResponse(parsedData.responseQueue, {
+      correlationId: parsedData.correlationId,
       ok: false,
       error: error instanceof Error ? error.message : "engine_error",
     });
   }
+      }
+
+    }
+  } catch {
+    console.error("Skipping invalid broker message");
+    continue;
+  }
+
+  
 }
