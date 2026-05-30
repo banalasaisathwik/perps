@@ -17,5 +17,16 @@ export const createOrderSchema = z.discriminatedUnion("type",[
     qty: z.number().positive("qty must be a positive number"),
     leverage: z.number().positive("leverage must be a positive number"),
   }),
-
 ])
+
+export const getDepthSchema = z.object({
+  symbol: z.string().trim().min(1, "symbol is required"),
+})
+
+export const getOrderSchema = z.object({
+  orderId: z.string().trim().min(1, "orderId is required"),
+})
+
+export const cancelOrderSchema = z.object({
+  orderId: z.string().trim().min(1, "orderId is required"),
+})

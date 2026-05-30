@@ -1,105 +1,92 @@
-import { ORDERBOOKS, type OrderRecord, type RestingOrder } from "../store/memory";
-import { closeShortPostions } from "../utils/closeShortPostions";
-import { getBalance } from "../utils/getBalance";
+import { ORDERBOOKS, type OrderRecord } from "../store/memory";
 import { getSortedAsks } from "../utils/getSortedVal";
-import { lockMargin } from "../utils/lockMargin";
-import { openPosition } from "../utils/openPosition";
 import { pushToOrderBook } from "../utils/pushToOrderBook";
+import { createFill } from "../utils/createFill";
 
 export function matchLimitLong(order: OrderRecord): OrderRecord {
-  if (order.type !== "limit" || order.side !== "long") {
-    throw new Error("error in if condn in matchlimitlong");
-  }
-
   const orderbook = ORDERBOOKS.get(order.symbol);
+
   if (!orderbook) {
-    pushToOrderBook(order, "bids");
-    order.status = order.filledQty > 0 ? "partially_filled" : "open";
+    if (order.type === "limit") {
+      pushToOrderBook(order, "bids");
+      order.status = "open";
+    } else {
+      order.status = "cancelled";
+    }
+
     return order;
   }
-
-  const avlBalance = getBalance(order.userId, order.symbol);
-  const initialMarginNeeded = (order.price! * order.qty) / order.leverage;
-
-  if (avlBalance.available < initialMarginNeeded) {
-    order.status = "cancelled";
-    throw new Error("Not enough margin for pos limit long");
-  }
-
-  const closedShortQty = closeShortPostions(order); 
-  order.filledQty = closedShortQty;
 
   while (order.filledQty < order.qty) {
     const sortedAsks = getSortedAsks(order.symbol);
 
     if (!sortedAsks || sortedAsks.size === 0) {
-      break; 
+      break;
     }
 
-    const firstRestingOrderPrice = sortedAsks.keys().next().value;
-    const firstRestingOrders = sortedAsks.values().next().value;
+    const bestAskPrice = sortedAsks.keys().next().value;
+
+    const restingOrders = sortedAsks.values().next().value;
 
     if (
-      firstRestingOrderPrice! > order.price! ||
-      !firstRestingOrders ||
-      firstRestingOrders.length === 0
+      bestAskPrice === undefined ||
+      !restingOrders ||
+      restingOrders.length === 0
     ) {
-      break; 
+      break;
     }
 
-    const removeRestingOrders: string[] = [];
+    if (bestAskPrice > order.price!) {
+      break;
+    }
 
-    for (const restingOrder of firstRestingOrders) {
+    const fullyConsumed: string[] = [];
 
-      if (order.filledQty === order.qty) break;
+    for (const restingOrder of restingOrders) {
+      if (order.filledQty >= order.qty) {
+        break;
+      }
 
       const remainingQty = order.qty - order.filledQty;
-      const qtyCanBeFilledInThisLoop =
-        remainingQty > restingOrder.remainQty
-          ? restingOrder.remainQty
-          : remainingQty;
 
-      const marginNeededForTrade =
-        (qtyCanBeFilledInThisLoop * restingOrder.price) / order.leverage;
+      const fillQty = Math.min(remainingQty, restingOrder.remainQty);
 
-      if (avlBalance.available < marginNeededForTrade) {
-        order.status = "cancelled";
-        throw new Error("Not enough margin for pos limit long");
-      }
+      createFill(order, restingOrder, fillQty, restingOrder.price);
 
-      lockMargin(order.userId, marginNeededForTrade);
-      openPosition(
-        order,
-        qtyCanBeFilledInThisLoop,
-        marginNeededForTrade,
-        restingOrder.price
-      );
-
-      order.filledQty += qtyCanBeFilledInThisLoop;
-      
-      restingOrder.remainQty -= qtyCanBeFilledInThisLoop;
+      restingOrder.remainQty -= fillQty;
 
       if (restingOrder.remainQty === 0) {
-        removeRestingOrders.push(restingOrder.orderId);
+        fullyConsumed.push(restingOrder.orderId);
       }
     }
 
-    const newRestingOrders = firstRestingOrders.filter(
-      (o) => !removeRestingOrders.includes(o.orderId)
+    const remainingOrders = restingOrders.filter(
+      (o) => !fullyConsumed.includes(o.orderId),
     );
 
-    if (newRestingOrders.length === 0) {
-      orderbook.asks.delete(firstRestingOrderPrice!);
+    if (remainingOrders.length === 0) {
+      orderbook.asks.delete(bestAskPrice);
     } else {
-      orderbook.asks.set(firstRestingOrderPrice!, newRestingOrders);
+      orderbook.asks.set(bestAskPrice, remainingOrders);
     }
   }
 
-  if (order.qty === order.filledQty) {
+  if (order.filledQty === order.qty) {
     order.status = "filled";
-  } else {
-    order.status = order.filledQty > 0 ? "partially_filled" : "open";
-    pushToOrderBook(order, "bids");
+
+    return order;
+  }
+
+  const remainingQty = order.qty - order.filledQty;
+
+  if (remainingQty > 0) {
+    if (order.type === "limit") {
+      pushToOrderBook(order, "bids");
+
+      order.status = order.filledQty > 0 ? "partially_filled" : "open";
+    } else {
+      order.status = order.filledQty > 0 ? "partially_filled" : "cancelled";
+    }
   }
 
   return order;

@@ -1,11 +1,15 @@
-import { BALANCES } from "../store/memory";
 import { getBalance } from "./getBalance";
 
-export function lockMargin(userId : string , margin : number){
-    const balance = getBalance(userId)
+export function lockMargin(
+  userId: string,
+  margin: number
+) {
+  const balance = getBalance(userId);
 
-    balance.available -=margin
-    balance.locked += margin
+  if (balance.available < margin) {
+    throw new Error("insufficient balance");
+  }
 
-    return
+  balance.available -= margin;
+  balance.locked += margin;
 }

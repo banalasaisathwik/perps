@@ -27,7 +27,7 @@ export interface OrderRecord {
   symbol: string;
   price: number | null;
   qty: number;
-  leverage : number;
+  leverage: number;
   filledQty: number;
   status: OrderStatus;
   fills: Fill[];
@@ -69,20 +69,20 @@ export interface DepthResponse {
   asks: DepthLevel[];
 }
 
-export interface Postion{
-  orderId : string,
+export interface Postion {
+  orderId: string;
   symbol: string;
   side: Side;
   qty: number;
   margin: number;
+  leverage: number;
   liquidationPrice: number;
   pnL: number | null;
-  averagePrice: number
-
+  averagePrice: number;
 }
 
 export const BALANCES = new Map<string, Balance>();
 export const ORDERBOOKS = new Map<string, OrderBook>();
 export const ORDERS = new Map<string, OrderRecord>();
 export const FILLS: Fill[] = [];
-export const POSITIONS = new Map<string,Postion[]>();
+export const POSITIONS = new Map<string, Postion[]>();

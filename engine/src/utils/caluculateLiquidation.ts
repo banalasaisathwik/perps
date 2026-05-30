@@ -1,11 +1,9 @@
 import type { Postion } from "../store/memory";
 
-export function caluculateLiquidation(position : Postion) : number{
+export function caluculateLiquidation(position: Postion): number {
+  const marginPerQty = position.margin / position.qty;
 
-    const margin = position.margin
-    const avgPrice = position.averagePrice
-
-    const liquidation = position.side === "long" ? avgPrice-margin : margin-avgPrice
-    
-    return liquidation
+  return position.side === "long"
+    ? position.averagePrice - marginPerQty
+    : position.averagePrice + marginPerQty;
 }

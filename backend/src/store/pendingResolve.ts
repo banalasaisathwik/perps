@@ -17,7 +17,6 @@ export function waitForEngineResponse(
       pendingResponses.delete(correlationId);
       reject(new Error("Engine response timed out"));
     }, timeoutMs);
-
     pendingResponses.set(correlationId, {
       resolve,
       reject,

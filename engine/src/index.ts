@@ -1,7 +1,11 @@
 import "dotenv/config";
 import { createClient } from "redis";
-import { createOrder } from "./handler/create-order";
+import { createOrder } from "./handler/createOrder";
 import { liquidation } from "./handler/liquidation";
+import { getUserBalances } from "./handler/getUserBalances";
+import { getDepth } from "./handler/getDepth";
+import { getOrder } from "./handler/getOrder";
+import { cancelOrder } from "./handler/cancelOrder";
 
 export type EngineCommandType =
   | "create_order"
@@ -23,7 +27,7 @@ export interface MarkPriceEvent {
   latestPrice: number;
 }
 
-export type BrokerMessage = OrderRequest | MarkPriceEvent
+export type BrokerMessage = OrderRequest | MarkPriceEvent 
 
 export interface EngineResponse {
   correlationId: string;
@@ -45,7 +49,7 @@ await Promise.all([brokerClient.connect(), responseClient.connect()]);
 const engineQueue = process.env.ENGINE_QUEUE ?? "backend-engine-queue";
 
 async function sendResponse(responseQueue: string, response: EngineResponse): Promise<void> {
-  await responseClient.xAdd(responseQueue,"*",{data: JSON.stringify(response)});
+  await responseClient.lPush(responseQueue, JSON.stringify(response));
 }
 
 function handleEngineRequest(message: OrderRequest): unknown {
@@ -53,14 +57,16 @@ function handleEngineRequest(message: OrderRequest): unknown {
 switch (message.type) {
   case  "create_order":
     return(createOrder(message))
-  // case "get_user_balance":
-  //   return getUserBalances(message)
-  // case "get_depth":
-  //   return getDepth(message)
-  // case "get_order":
-  //   return getOrder(message)
+  case "get_user_balance":
+    return getUserBalances(message)
+  case "get_depth":
+    return getDepth(message)
+  case "get_order":
+    return getOrder(message)
+  case "cancel_order":
+    return cancelOrder(message)
   default:
-    break;
+    throw new Error("unknown engine command");
 }
 
 }
@@ -68,56 +74,40 @@ switch (message.type) {
 console.log(`Engine listening on Redis queue: ${engineQueue}`);
 
 for (;;) {
-  const items = await brokerClient.xRead([
-    {
-      key : engineQueue,
-      id : "$"
-    }
-  ],{
-    BLOCK : 1000,
-    COUNT : 10
-  });
-  if (!items) continue;
+  const item = await brokerClient.brPop(engineQueue, 0);
+  if (!item) continue;
 
+  let message: BrokerMessage;
 
   try {
-    for(const stream of items){
-      for(const msg of stream.messages){
-        const id = msg.id
-
-        const parsedData = JSON.parse(msg.message.data) as BrokerMessage
-
-        if (parsedData.type === "mark_price") {
-    try {
-      liquidation(parsedData);
-    } catch (error) {
-      console.error("Failed to process mark price", error);
-    }
-    continue;
-  }
-
-  try {
-    const data = handleEngineRequest(parsedData);
-
-    await sendResponse(parsedData.responseQueue, {
-      correlationId: parsedData.correlationId,
-      ok: true,
-      data,
-    });
-  } catch (error) {
-    await sendResponse(parsedData.responseQueue, {
-      correlationId: parsedData.correlationId,
-      ok: false,
-      error: error instanceof Error ? error.message : "engine_error",
-    });
-  }
-      }
-
-    }
+    message = JSON.parse(item.element) as BrokerMessage;
   } catch {
     console.error("Skipping invalid broker message");
     continue;
   }
 
-  
+  if (message.type === "mark_price") {
+    try {
+      liquidation(message);
+    } catch (error) {
+      console.error("Failed  mark price", error);
+    }
+    continue;
+  }
+
+  try {
+    const data = handleEngineRequest(message);
+
+    await sendResponse(message.responseQueue, {
+      correlationId: message.correlationId,
+      ok: true,
+      data,
+    });
+  } catch (error) {
+    await sendResponse(message.responseQueue, {
+      correlationId: message.correlationId,
+      ok: false,
+      error: error instanceof Error ? error.message : "engine_error",
+    });
+  }
 }

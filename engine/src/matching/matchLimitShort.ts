@@ -1,108 +1,75 @@
 import { ORDERBOOKS, type OrderRecord } from "../store/memory";
-import { getBalance } from "../utils/getBalance";
 import { getSortedBids } from "../utils/getSortedVal";
-import { lockMargin } from "../utils/lockMargin";
-import { openPosition } from "../utils/openPosition";
 import { pushToOrderBook } from "../utils/pushToOrderBook";
-import { closeLongPositions } from "../utils/closeLongPositions";
+import { createFill } from "../utils/createFill";
 
-export function matchLimitShort(order: OrderRecord) : OrderRecord{
-  if (order.type !== "limit" || order.side !== "short") {
-    throw new Error("error in if condn in matchlimitShort");
+export function matchLimitShort(order: OrderRecord): OrderRecord {
+
+  const orderbook = ORDERBOOKS.get(order.symbol)
+
+  if(!orderbook){
+    if(order.type === "limit"){
+      order.status = "open"
+      pushToOrderBook(order,"asks")
+    }
+    else{
+      order.status = "cancelled"
+    }
+    return order
   }
 
-  const orderbook = ORDERBOOKS.get(order.symbol);
-  if (!orderbook) {
-    pushToOrderBook(order, "asks");
-    order.status = order.filledQty > 0 ? "partially_filled" : "open";
-    return order;
-  }
+  while(order.filledQty < order.qty){
+    const sortedBids  = getSortedBids(order.symbol)
 
-  const avlBalance = getBalance(order.userId, order.symbol);
-  const initialMarginNeeded = (order.price! * order.qty) / order.leverage;
-
-  if (avlBalance.available < initialMarginNeeded) {
-    order.status = "cancelled";
-    throw new Error("Not enough margin for pos limit short");
-  }
-
-  const closedLongQty = closeLongPositions(order); 
-  order.filledQty = closedLongQty;
-
-  while (order.filledQty < order.qty) {
-    const sortedBids = getSortedBids(order.symbol);
-
-    if (!sortedBids || sortedBids.size === 0) {
-      break; 
+    if(!sortedBids || sortedBids.size === 0){
+      break
     }
 
-    const firstRestingOrderPrice = sortedBids.keys().next().value;
-    const firstRestingOrders = sortedBids.values().next().value;
+    const firstPrice = sortedBids.keys().next().value
+    const firstOrders = sortedBids.values().next().value
 
-    if (
-      firstRestingOrderPrice! < order.price! ||
-      !firstRestingOrders ||
-      firstRestingOrders.length === 0
-    ) {
-      break; 
+    if(firstPrice === undefined || !firstOrders || firstOrders.length === 0){
+      break
     }
 
-    const removeRestingOrders: string[] = [];
+    const fulfilledRestingOrderId : string[] = []
 
-    for (const restingOrder of firstRestingOrders) {
-
-      if (order.filledQty === order.qty) break;
-
-      const remainingQty = order.qty - order.filledQty;
-      const qtyCanBeFilledInThisLoop =
-        remainingQty > restingOrder.remainQty
-          ? restingOrder.remainQty
-          : remainingQty;
-
-      const marginNeededForTrade =
-        (qtyCanBeFilledInThisLoop * restingOrder.price) / order.leverage;
-
-      if (avlBalance.available < marginNeededForTrade) {
-        order.status = "cancelled";
-        throw new Error("Not enough margin for pos limit short");
+    for(const restingOrder of firstOrders){
+      if(order.filledQty >= order.qty){
+        break
       }
 
-      lockMargin(order.userId, marginNeededForTrade);
-      openPosition(
-        order,
-        qtyCanBeFilledInThisLoop,
-        marginNeededForTrade,
-        restingOrder.price
-      );
+      const remainingQty = order.qty - order.filledQty
 
-      order.filledQty += qtyCanBeFilledInThisLoop;
-      
-      restingOrder.remainQty -= qtyCanBeFilledInThisLoop;
+      const fillQty = Math.min(remainingQty,restingOrder.remainQty)
 
+      createFill(order,restingOrder,fillQty,restingOrder.price)
+
+      restingOrder.remainQty -= fillQty
       if (restingOrder.remainQty === 0) {
-        removeRestingOrders.push(restingOrder.orderId);
+      fulfilledRestingOrderId.push(restingOrder.orderId)
       }
     }
 
-    const newRestingOrders = firstRestingOrders.filter(
-      (o) => !removeRestingOrders.includes(o.orderId)
-    );
+    const remainingOrder = firstOrders.filter((o)=>{
+        !fulfilledRestingOrderId.includes(o.orderId)
+    })
 
-    if (newRestingOrders.length === 0) {
-      orderbook.bids.delete(firstRestingOrderPrice!);
-    } else {
-      orderbook.bids.set(firstRestingOrderPrice!, newRestingOrders);
+    if(remainingOrder.length === 0){
+      orderbook.bids.delete(firstPrice)
+    }
+    else{
+      orderbook.bids.set(firstPrice,remainingOrder)
     }
   }
 
-  if (order.qty === order.filledQty) {
-    order.status = "filled";
-  } else {
-    order.status = order.filledQty > 0 ? "partially_filled" : "open";
-    pushToOrderBook(order, "asks");
+  if(order.type === "market"){
+    order.status = order.filledQty > 0 ? "partially_filled" : "cancelled"
+  }
+  else{
+    order.status = order.filledQty > 0 ? "partially_filled" : "open"
   }
 
-  return order;
+  return order
 
 }
-

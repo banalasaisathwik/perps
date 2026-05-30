@@ -5,7 +5,6 @@ import bcrypt from "bcrypt"
 import { createToken } from "../middleware/auth";
 
 export async function signup(req: Request, res: Response) {
-
   const parsedRequest = authZodPayload.safeParse(req.body);
 
   if (!parsedRequest.success) {

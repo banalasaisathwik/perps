@@ -1,39 +1,47 @@
-import { POSITIONS, type OrderRecord,type Postion } from "../store/memory";
+import { POSITIONS, type OrderRecord, type Postion } from "../store/memory";
 import { caluculateLiquidation } from "./caluculateLiquidation";
-import { getAvgPrice } from "./getAvgPrice";
 
-export function openPosition(order : OrderRecord,qtyToOpen : number,marginLocked:number,newEntryPrice:number){
+export function openPosition(
+  order: OrderRecord,
+  qtyToOpen: number,
+  marginLocked: number,
+  entryPrice: number,
+) {
+  const userPositions = POSITIONS.get(order.userId) ?? [];
 
-    const userId = order.userId
+  const existingPosition = userPositions.find(
+    (p) => p.symbol === order.symbol && p.side === order.side,
+  );
 
-    if(!POSITIONS.has(userId)){
-        const position :Postion ={
-          orderId: order.orderId,
-          symbol:order.symbol ,
-          side: order.side,
-          qty: qtyToOpen,
-          margin: marginLocked,
-          liquidationPrice: order.side=== "long" ? newEntryPrice-marginLocked : marginLocked-newEntryPrice,
-          pnL: null,
-          averagePrice: newEntryPrice
-        
-    }
-        POSITIONS.set(userId,[])
-        POSITIONS.get(userId)?.push(position)
-        return
-    }
+  if (!existingPosition) {
+    const position: Postion = {
+      orderId: order.orderId,
+      symbol: order.symbol,
+      side: order.side,
+      qty: qtyToOpen,
+      margin: marginLocked,
+      leverage: order.leverage,
+      liquidationPrice: 0,
+      pnL: null,
+      averagePrice: entryPrice,
+    };
 
-    const avgPrice = getAvgPrice(newEntryPrice,userId,order.symbol,qtyToOpen)
-    const position = POSITIONS.get(userId)?.find(p => p.symbol === order.symbol)
-    if (position) {
-    position.averagePrice = avgPrice;
-    position.margin+=marginLocked
+    position.liquidationPrice = caluculateLiquidation(position);
 
-    const newLiquidationPrice = caluculateLiquidation(position)
-    position.liquidationPrice = newLiquidationPrice
-    
-    }
+    userPositions.push(position);
+    POSITIONS.set(order.userId, userPositions);
 
-    return
+    return;
+  }
 
+  const totalQty = existingPosition.qty + qtyToOpen;
+
+  existingPosition.averagePrice =
+    (existingPosition.averagePrice * existingPosition.qty + entryPrice * qtyToOpen) / totalQty;
+
+  existingPosition.qty += qtyToOpen;
+
+  existingPosition.margin += marginLocked;
+
+  existingPosition.liquidationPrice = caluculateLiquidation(existingPosition);
 }
