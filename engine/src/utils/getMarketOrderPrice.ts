@@ -13,12 +13,18 @@ export function getMarketOrderPrice(
   }
 
   if (side === "long") {
-    const bestAsk = Math.min(...book.asks.keys());
+    if (!book.asks || book.asks.size === 0) return null;
+
+    const keys = [...book.asks.keys()].map(Number);
+    const bestAsk = Math.min(...keys);
 
     return bestAsk * (1 + SLIPPAGE_PERCENT / 100);
   }
 
-  const bestBid = Math.max(...book.bids.keys());
+  if (!book.bids || book.bids.size === 0) return null;
+
+  const bidKeys = [...book.bids.keys()].map(Number);
+  const bestBid = Math.max(...bidKeys);
 
   return bestBid * (1 - SLIPPAGE_PERCENT / 100);
 }

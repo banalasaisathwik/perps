@@ -1,5 +1,5 @@
 import { ORDERBOOKS, type OrderRecord } from "../store/memory";
-import { closeShortPostions } from "../utils/closeShortPostions";
+import { closeShortPosition } from "../utils/closeShortPostion";
 import { getBalance } from "../utils/getBalance";
 import { getSortedAsks } from "../utils/getSortedVal";
 import { lockMargin } from "../utils/lockMargin";
@@ -18,7 +18,7 @@ export function matchMarketLong(order : OrderRecord) {
   }
 
   const avlBalance = getBalance(order.userId, order.symbol);
-  const closedShortQty = closeShortPostions(order); 
+  const closedShortQty = closeShortPosition(order, order.price ?? 0, order.qty);
   order.filledQty = closedShortQty;
 
   while (order.filledQty < order.qty) {

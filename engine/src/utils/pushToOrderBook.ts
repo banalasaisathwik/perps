@@ -9,7 +9,7 @@ export function pushToOrderBook(order: OrderRecord,pushTo : pushTo){
 
     const orderbook = ORDERBOOKS.get(symbol)
     if(!orderbook){
-        ORDERBOOKS.set(symbol,{asks:new Map(),bids:new Map()})
+        ORDERBOOKS.set(symbol,{asks:new Map<number,RestingOrder[]>(),bids:new Map<number,RestingOrder[]>()})
     }
     const symOrderbook = ORDERBOOKS.get(symbol)
     const fulfilled = Math.min(order.qty,order.filledQty)
@@ -30,11 +30,15 @@ export function pushToOrderBook(order: OrderRecord,pushTo : pushTo){
           createdAt: Date.now()
     }
 
-    const bids = symOrderbook?.bids
-    if(!bids?.has(price!)){
-        bids?.set(price!,[])
+    if(!symOrderbook) return
+    const bookSide = symOrderbook[pushTo]
+
+    if (!bookSide.has(price!)) {
+        bookSide.set(price!, [])
     }
 
-    bids?.get(price!)?.push(newRestingOrder)
+    const arr = bookSide.get(price!)!;
+    arr.push(newRestingOrder);
+    bookSide.set(price!, arr);
     return
 }

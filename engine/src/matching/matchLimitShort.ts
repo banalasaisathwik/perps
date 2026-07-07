@@ -51,9 +51,9 @@ export function matchLimitShort(order: OrderRecord): OrderRecord {
       }
     }
 
-    const remainingOrder = firstOrders.filter((o)=>{
+    const remainingOrder = firstOrders.filter((o)=>
         !fulfilledRestingOrderId.includes(o.orderId)
-    })
+    )
 
     if(remainingOrder.length === 0){
       orderbook.bids.delete(firstPrice)
