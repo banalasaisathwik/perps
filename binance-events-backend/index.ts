@@ -52,6 +52,8 @@ class MarkPrice {
 
 const obj = MarkPrice.getInstance();
 
+// BTCUSDC is the source of truth for the traded symbol; must match SYMBOL in
+// frontend/src/data/orderBookSeed.ts and backend/src/dummy/order-bot.ts.
 setInterval(async () => {
   const latestPrice = obj.getPrice("BTCUSDC");
   if (latestPrice === undefined) {

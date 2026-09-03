@@ -19,7 +19,7 @@ export function matchMarketShort(order : OrderRecord){
 
   const avlBalance = getBalance(order.userId, order.symbol);
 
-  const closedLongQty = closeLongPosition(order);
+  const closedLongQty = closeLongPosition(order, order.price ?? 0, order.qty);
   order.filledQty = closedLongQty;
 
   while (order.filledQty < order.qty) {

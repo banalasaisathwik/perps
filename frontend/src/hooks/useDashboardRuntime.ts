@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { seedAsks, seedBids, SYMBOL } from "../data/orderBookSeed";
 import type {
   ConnectionStatus,
+  RecentOrder,
   Flow,
   Level,
   OrderType,
@@ -27,11 +28,17 @@ export function useDashboardRuntime() {
   const [botRunning, setBotRunning] = useState(false);
   const [orderType, setOrderType] = useState<OrderType>("limit");
   const [side, setSide] = useState<Side>("long");
-  const [price, setPrice] = useState(String(seedAsks[0].price));
+  const [price, setPrice] = useState(String(seedBids[0].price));
   const [qty, setQty] = useState("0.250");
   const [leverage, setLeverage] = useState("10");
   const [token, setToken] = useState("");
+  const [username, setUsername] = useState("");
+  const [authStatus, setAuthStatus] = useState<"pending" | "ready" | "error">(
+    "pending",
+  );
   const [activeFlow, setActiveFlow] = useState<Flow>("idle");
+    const [recentOrder, setRecentOrder] = useState<RecentOrder | null>(null);
+  const [markPrice, setMarkPrice] = useState<number | null>(null);
   const [timeline, setTimeline] = useState<TimelineEvent[]>([
     {
       id: 1,
@@ -74,6 +81,66 @@ export function useDashboardRuntime() {
   const bidTotals = useMemo(() => addTotals(bids.slice(0, 11)), [bids]);
   const midPrice = getMidPrice(bids, asks);
   const spread = getSpread(bids, asks);
+
+  useEffect(() => {
+    // Order creation now requires auth, so every session needs a token. Reuse
+    // one saved from a previous visit, or provision a throwaway guest account.
+    const savedToken = localStorage.getItem("perps_token");
+    const savedUsername = localStorage.getItem("perps_username");
+
+    if (savedToken && savedUsername) {
+      setToken(savedToken);
+      setUsername(savedUsername);
+      setAuthStatus("ready");
+      pushEvent(
+        "Frontend",
+        "Restored session",
+        `Reused saved token for ${savedUsername}`,
+      );
+      return;
+    }
+
+    const guestUsername = `guest_${Math.random().toString(36).slice(2, 10)}`;
+    const guestPassword = crypto.randomUUID();
+
+    // Signup writes the new account to Postgres before a token comes back,
+    // so the flow animation starts here rather than after the response.
+    pulseFlow("signup");
+    fetch(`${API_BASE}/signup`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username: guestUsername, password: guestPassword }),
+    })
+      .then((r) => {
+        if (!r.ok) {
+          throw new Error(`HTTP ${r.status}`);
+        }
+        return r.json();
+      })
+      .then((data: { token?: string; username?: string }) => {
+        if (!data.token || !data.username) {
+          throw new Error("Signup response missing token or username");
+        }
+        localStorage.setItem("perps_token", data.token);
+        localStorage.setItem("perps_username", data.username);
+        setToken(data.token);
+        setUsername(data.username);
+        setAuthStatus("ready");
+        pushEvent(
+          "Backend REST",
+          "POST /signup",
+          `Provisioned guest session for ${data.username}`,
+        );
+      })
+      .catch((error) => {
+        setAuthStatus("error");
+        pushEvent(
+          "Backend REST",
+          "Guest sign-in failed",
+          error instanceof Error ? error.message : "Unknown signup error",
+        );
+      });
+  }, [API_BASE]);
 
   useEffect(() => {
     // Health check proves that the browser can reach the backend currently
@@ -160,6 +227,14 @@ export function useDashboardRuntime() {
             "orderbook.update received",
             "Engine snapshot reached frontend through Redis orderbook stream",
           );
+        } else if (msg.type === "mark_price.update" && typeof msg.price === "number") {
+          setMarkPrice(msg.price);
+          pulseFlow("mark-price");
+          pushEvent(
+            "Backend WS",
+            "mark_price.update received",
+            `Binance -> Mark Price Poller -> engine -> frontend: ${msg.symbol ?? SYMBOL} @ ${msg.price}`,
+          );
         }
       } catch {
         pushEvent(
@@ -241,8 +316,8 @@ export function useDashboardRuntime() {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          // Auth is optional in this demo. If present, backend middleware can
-          // identify the user; otherwise create-order falls back to "guest".
+          // Auth is mandatory; a token is auto-provisioned on mount (see the
+          // sign-in effect above) before the form is ever enabled for submit.
           ...(token ? { Authorization: `Bearer ${token}` } : {}),
         },
         body: JSON.stringify(body),
@@ -252,11 +327,50 @@ export function useDashboardRuntime() {
         throw new Error(`HTTP ${response.status}`);
       }
 
-      pushEvent(
-        "Engine",
-        "Processed create_order",
-        "Response returned through perps:engine:responses",
-      );
+      const orderResult = (await response.json()) as {
+        side?: Side;
+        status?: string;
+        filledQty?: number;
+        fills?: Array<{ price?: number }>;
+      };
+      const fillPrices = (orderResult.fills ?? [])
+        .map((fill) => fill.price)
+        .filter((fillPrice): fillPrice is number => typeof fillPrice === "number");
+
+const status =
+        orderResult.status === "open" ||
+        orderResult.status === "partially_filled" ||
+        orderResult.status === "filled" ||
+        orderResult.status === "cancelled"
+          ? orderResult.status
+          : "cancelled";
+      const filledQty = typeof orderResult.filledQty === "number" ? orderResult.filledQty : 0;
+
+      setRecentOrder({
+        side: orderResult.side === "short" ? "short" : "long",
+        type: orderType,
+        status,
+        requestedPrice: orderType === "limit" ? numericPrice : null,
+        qty: numericQty,
+        filledQty,
+        fillPrices,
+      });
+
+      if (status === "filled" || status === "partially_filled") {
+        pushEvent(
+          "Engine",
+          "Order matched",
+          `${filledQty} ${SYMBOL} matched. The order book highlights the exact price used.`,
+        );
+      } else if (status === "open") {
+        pushEvent(
+          "Engine",
+          "Order added to the book",
+          "The order is waiting at the highlighted price for a matching trader.",
+        );
+      } else {
+        pushEvent("Engine", "Order cancelled", "No matching price was available.");
+      }
     } catch (error) {
       pushEvent(
         "Backend REST",
@@ -295,12 +409,15 @@ export function useDashboardRuntime() {
 
   return {
     activeFlow,
+    recentOrder,
     askTotals,
+    authStatus,
     backendStatus,
     bidTotals,
     botRunning,
     clearTimeline,
     leverage,
+    markPrice,
     midPrice,
     orderType,
     placeOrder,
@@ -319,6 +436,7 @@ export function useDashboardRuntime() {
     timeline,
     token,
     toggleBot,
+    username,
     wsStatus,
   };
 }

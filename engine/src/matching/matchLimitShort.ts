@@ -63,11 +63,21 @@ export function matchLimitShort(order: OrderRecord): OrderRecord {
     }
   }
 
-  if(order.type === "market"){
-    order.status = order.filledQty > 0 ? "partially_filled" : "cancelled"
+  if(order.filledQty === order.qty){
+    order.status = "filled"
+    return order
   }
-  else{
-    order.status = order.filledQty > 0 ? "partially_filled" : "open"
+
+  const remainingQty = order.qty - order.filledQty
+
+  if(remainingQty > 0){
+    if(order.type === "limit"){
+      pushToOrderBook(order,"asks")
+      order.status = order.filledQty > 0 ? "partially_filled" : "open"
+    }
+    else{
+      order.status = order.filledQty > 0 ? "partially_filled" : "cancelled"
+    }
   }
 
   return order

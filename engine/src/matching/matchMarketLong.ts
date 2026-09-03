@@ -88,6 +88,10 @@ export function matchMarketLong(order : OrderRecord) {
     } else {
       orderbook.asks.set(firstRestingOrderPrice!, newRestingOrders);
     }
+
+    if(!marginFlag){
+      break
+    }
   }
 
   if (order.qty === order.filledQty) {

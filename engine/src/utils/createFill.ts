@@ -21,7 +21,7 @@ export function createFill(
   }
 
   const buyOrder = incomingOrder.side === "long" ? incomingOrder : restingOrderRecord
-  const sellOrder = incomingOrder.side === "short" ? restingOrderRecord : incomingOrder
+  const sellOrder = incomingOrder.side === "short" ? incomingOrder : restingOrderRecord
 
   processUserTrade(buyOrder,qty,price)
   processUserTrade(sellOrder,qty,price)

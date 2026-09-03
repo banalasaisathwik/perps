@@ -1,32 +1,44 @@
 import type { ServiceNode } from "../types/dashboard";
 
 export const services: ServiceNode[] = [
-  { id: "frontend-a", title: "Frontend", tech: "React", lane: "main" },
-  { id: "rest", title: "Backend REST API", tech: "Express", lane: "main" },
+  { id: "frontend-a", title: "Your trade", tech: "Order details", lane: "main" },
+  { id: "rest", title: "Trading service", tech: "Checks your order", lane: "main" },
   {
     id: "commands",
-    title: "Redis Commands",
-    tech: "perps:engine:commands",
+    title: "Order queue",
+    tech: "Sends it safely",
     lane: "main",
   },
-  { id: "engine", title: "Engine", tech: "Matching + Risk", lane: "main" },
+  { id: "engine", title: "Trade engine", tech: "Matches the order", lane: "main" },
   {
     id: "events",
-    title: "Redis Events",
-    tech: "perps:events:orderbook",
+    title: "Price updates",
+    tech: "Keeps prices current",
     lane: "main",
   },
-  { id: "ws", title: "Backend WebSocket", tech: "/ws", lane: "main" },
+  { id: "ws", title: "Live connection", tech: "Sends results back", lane: "main" },
   {
     id: "frontend-b",
-    title: "Frontend",
-    tech: "Order book update",
+    title: "Your screen",
+    tech: "Shows the latest price",
     lane: "main",
+  },
+  {
+    id: "database",
+    title: "User database",
+    tech: "Postgres: stores accounts for /signup and /signin",
+    lane: "support",
   },
   {
     id: "binance",
-    title: "Binance Events",
-    tech: "mark price stream",
+    title: "Binance",
+    tech: "Source of live market prices",
+    lane: "support",
+  },
+  {
+    id: "mark-poller",
+    title: "Mark Price Poller",
+    tech: "Polls Binance, publishes to Redis",
     lane: "support",
   },
 ];

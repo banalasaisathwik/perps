@@ -15,7 +15,7 @@ export function closeShortPosition(
   }
 
   const shortPosition = positions.find((p)=>{
-    p.side === "short"  && p.symbol === order.symbol
+    return p.side === "short"  && p.symbol === order.symbol
   })
 
   if(!shortPosition){
@@ -35,7 +35,10 @@ export function closeShortPosition(
   unlockMargin(order.userId,marginToRelease)
 
   getBalance(order.userId).available += pnl
-  
+
+  shortPosition.qty -= qtyToClose
+  shortPosition.margin -= marginToRelease
+
   if(shortPosition.qty === 0){
     positions.splice(positions.indexOf(shortPosition),1)
   }

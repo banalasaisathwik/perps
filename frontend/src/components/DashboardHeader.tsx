@@ -14,20 +14,20 @@ export function DashboardHeader({
   return (
     <section className="dashboard-header">
       <div>
-        <div className="eyebrow">Perps Backend Demo</div>
-        <h1>Service Communication Dashboard</h1>
+        <div className="eyebrow">Perps trading</div>
+        <h1>Trade with a clear view</h1>
       </div>
       <div className="status-stack">
         <span
           className={`status-pill ${backendStatus === "connected" ? "healthy" : "warn"}`}
         >
-          Backend {backendStatus}
+          Trading service {backendStatus}
         </span>
         <span className={`status-pill ${wsStatus === "connected" ? "healthy" : "warn"}`}>
-          WebSocket {wsStatus}
+          Live prices {wsStatus}
         </span>
         <span className={`status-pill ${botRunning ? "active" : ""}`}>
-          Bot {botRunning ? "running" : "idle"}
+          Price bot {botRunning ? "running" : "paused"}
         </span>
       </div>
     </section>

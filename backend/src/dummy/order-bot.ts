@@ -1,6 +1,7 @@
 import { sendToEngine } from "../redis/engine-client";
 
-const SYMBOL = process.env.ORDER_BOT_SYMBOL ?? "USD_BTC";
+// Must match binance-events-backend/index.ts's mark-price symbol and frontend/src/data/orderBookSeed.ts's SYMBOL.
+const SYMBOL = process.env.ORDER_BOT_SYMBOL ?? "BTCUSDC";
 
 function randInt(min: number, max: number) {
   return Math.floor(Math.random() * (max - min + 1)) + min;

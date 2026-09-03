@@ -10,8 +10,8 @@ export function ServiceMap({ activeFlow }: ServiceMapProps) {
     <section className={`panel service-map ${activeFlow}`}>
       <div className="panel-title">
         <span className="step-badge">1</span>
-        <span>Service Communication Map</span>
-        <span className="live-badge">Live</span>
+        <span>How your order moves</span>
+        <span className="live-badge">Live updates</span>
       </div>
 
       <div className="map-grid">
@@ -35,12 +35,15 @@ export function ServiceMap({ activeFlow }: ServiceMapProps) {
         <div className="flow-line ws c" />
         <div className="flow-line mark a" />
         <div className="flow-line mark b" />
+        <div className="flow-line signup a" />
+        <div className="flow-line signup b" />
       </div>
 
       <div className="map-legend">
-        <span><i className="legend-place" /> Place order path</span>
-        <span><i className="legend-ws" /> WebSocket update path</span>
-        <span><i className="legend-mark" /> Mark price flow</span>
+        <span><i className="legend-place" /> Order sent</span>
+        <span><i className="legend-ws" /> Price update</span>
+        <span><i className="legend-mark" /> Market price</span>
+        <span><i className="legend-signup" /> Sign up</span>
       </div>
     </section>
   );

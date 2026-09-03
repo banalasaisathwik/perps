@@ -1,7 +1,9 @@
 import type { Level } from "../types/dashboard";
 
-export const SYMBOL = "USD_BTC";
-export const DISPLAY_SYMBOL = "BTCUSDT";
+// Must match binance-events-backend/index.ts's mark-price symbol and backend/src/dummy/order-bot.ts's SYMBOL.
+export const SYMBOL = "BTCUSDC";
+// Must match binance-events-backend/index.ts's mark-price symbol and backend/src/dummy/order-bot.ts's SYMBOL.
+export const DISPLAY_SYMBOL = "BTCUSDC";
 
 // Demo fallback book. The backend replaces this with live depth when available,
 // but keeping seed levels avoids a blank dashboard during startup or outages.

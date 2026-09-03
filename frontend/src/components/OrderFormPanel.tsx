@@ -2,6 +2,7 @@ import type React from "react";
 import type { OrderType, Side } from "../types/dashboard";
 
 type OrderFormPanelProps = {
+  authStatus: "pending" | "ready" | "error";
   displaySymbol: string;
   leverage: string;
   onLeverageChange: (value: string) => void;
@@ -11,17 +12,17 @@ type OrderFormPanelProps = {
   onSetBestAsk: () => void;
   onSetBestBid: () => void;
   onSideChange: (side: Side) => void;
-  onTokenChange: (value: string) => void;
   onToggleBot: (start: boolean) => void;
   onTypeChange: (type: OrderType) => void;
   orderType: OrderType;
   price: string;
   qty: string;
   side: Side;
-  token: string;
+  username: string;
 };
 
 export function OrderFormPanel({
+  authStatus,
   displaySymbol,
   leverage,
   onLeverageChange,
@@ -31,20 +32,19 @@ export function OrderFormPanel({
   onSetBestAsk,
   onSetBestBid,
   onSideChange,
-  onTokenChange,
   onToggleBot,
   onTypeChange,
   orderType,
   price,
   qty,
   side,
-  token,
+  username,
 }: OrderFormPanelProps) {
   return (
     <div className="panel order-form-panel">
       <div className="panel-title">
         <span className="step-badge">3</span>
-        <span>Order Form</span>
+        <span>Place your trade</span>
       </div>
 
       <form onSubmit={onPlaceOrder} className="order-form">
@@ -54,7 +54,7 @@ export function OrderFormPanel({
         </label>
 
         <label>
-          Order Type
+          How to buy or sell
           <div className="segmented">
             <button
               // The selected class is visual state; the actual state lives in useDashboardRuntime.
@@ -126,28 +126,29 @@ export function OrderFormPanel({
         </label>
 
         <div className="form-actions">
-          <button className="btn btn-primary" type="submit">
+          <button className="btn btn-primary" type="submit" disabled={authStatus !== "ready"}>
             {/* Text follows the current order type, but submit handler stays the same. */}
-            Place {orderType === "limit" ? "Limit" : "Market"}
+            Review and place order
           </button>
           <button className="btn btn-danger" type="button" onClick={() => onToggleBot(false)}>
-            Stop Bot
+            Pause price bot
           </button>
           <button className="btn btn-ghost" type="button" onClick={() => onToggleBot(true)}>
-            Start Bot
+            Start price bot
           </button>
           <button className="btn btn-ghost green-outline" type="button" onClick={onSetBestBid}>
-            Set best bid
+            Use best buy price
           </button>
           <button className="btn btn-ghost red-outline" type="button" onClick={onSetBestAsk}>
-            Set best ask
+            Use best sell price
           </button>
         </div>
 
-        <label className="token-field">
-          Auth token optional
-          <input value={token} onChange={(e) => onTokenChange(e.target.value)} />
-        </label>
+        <p className="token-field auth-status">
+          {authStatus === "pending" && "Signing in..."}
+          {authStatus === "ready" && `Signed in as ${username}`}
+          {authStatus === "error" && "Sign-in failed — retry by reloading"}
+        </p>
       </form>
     </div>
   );

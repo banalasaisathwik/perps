@@ -11,7 +11,19 @@ export type OrderType = "limit" | "market";
 
 export type Side = "long" | "short";
 
-export type Flow = "place-order" | "ws-update" | "mark-price" | "idle";
+export type OrderStatus = "open" | "partially_filled" | "filled" | "cancelled";
+
+export type RecentOrder = {
+  side: Side;
+  type: OrderType;
+  status: OrderStatus;
+  requestedPrice: number | null;
+  qty: number;
+  filledQty: number;
+  fillPrices: number[];
+};
+
+export type Flow = "place-order" | "ws-update" | "mark-price" | "signup" | "idle";
 
 export type ConnectionStatus = "checking" | "connected" | "offline";
 

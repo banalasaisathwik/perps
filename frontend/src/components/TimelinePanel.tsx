@@ -10,7 +10,7 @@ export function TimelinePanel({ events, onClear }: TimelinePanelProps) {
     <section className="panel timeline-panel">
       <div className="panel-title">
         <span className="step-badge">4</span>
-        <span>Event Timeline</span>
+        <span>Recent activity</span>
         <button className="chip" type="button" onClick={onClear}>
           Clear
         </button>
@@ -19,8 +19,8 @@ export function TimelinePanel({ events, onClear }: TimelinePanelProps) {
       <div className="timeline-table">
         <div className="timeline-head">
           <span>Time</span>
-          <span>Source</span>
-          <span>Event</span>
+          <span>From</span>
+          <span>Update</span>
           <span>Details</span>
         </div>
         {events.map((item) => (

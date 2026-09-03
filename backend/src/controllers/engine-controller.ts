@@ -12,7 +12,10 @@ export async function createOrder(req: Request, res: Response) {
   const { type, side, symbol, qty, leverage } = vaidatePayload.data;
   const price = type === "market" ? null : vaidatePayload.data.price;
 
-  const userId = req.userId || "guest";
+  const userId = req.userId;
+  if (!userId) {
+    throw new Error("Missing authenticated user");
+  }
 
   const message = {
     userId,

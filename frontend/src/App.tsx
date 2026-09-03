@@ -27,11 +27,14 @@ function App() {
           askTotals={dashboard.askTotals}
           bidTotals={dashboard.bidTotals}
           displaySymbol={DISPLAY_SYMBOL}
+          markPrice={dashboard.markPrice}
+          recentOrder={dashboard.recentOrder}
           midPrice={dashboard.midPrice}
           spread={dashboard.spread}
         />
 
         <OrderFormPanel
+          authStatus={dashboard.authStatus}
           displaySymbol={DISPLAY_SYMBOL}
           leverage={dashboard.leverage}
           onLeverageChange={dashboard.setLeverage}
@@ -41,14 +44,13 @@ function App() {
           onSetBestAsk={dashboard.setBestAsk}
           onSetBestBid={dashboard.setBestBid}
           onSideChange={dashboard.setSide}
-          onTokenChange={dashboard.setToken}
           onToggleBot={dashboard.toggleBot}
           onTypeChange={dashboard.setOrderType}
           orderType={dashboard.orderType}
           price={dashboard.price}
           qty={dashboard.qty}
           side={dashboard.side}
-          token={dashboard.token}
+          username={dashboard.username}
         />
       </section>
 

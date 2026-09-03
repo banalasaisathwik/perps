@@ -3,7 +3,6 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "rundev": "node ./scripts/rundev.js",
     "dev": "node ./scripts/rundev.js"
   }
 }

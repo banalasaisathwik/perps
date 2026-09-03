@@ -7,6 +7,10 @@ export function openPosition(
   marginLocked: number,
   entryPrice: number,
 ) {
+  if (qtyToOpen <= 0) {
+    return;
+  }
+
   const userPositions = POSITIONS.get(order.userId) ?? [];
 
   const existingPosition = userPositions.find(

@@ -10,10 +10,14 @@ export function liquidation(message: MarkPriceEvent) {
     if(!validatedPayload.success){
         throw new Error("bad structure in liquidation")
     }
-    const {latestPrice } = validatedPayload.data
+    const {latestPrice, symbol } = validatedPayload.data
 
     POSITIONS.forEach((position, userId) => {
         position.forEach((p) => {
+            if (p.symbol !== symbol) {
+                return
+            }
+
             const originalOrder = ORDERS.get(p.orderId)
             if (!originalOrder) {
                 return
@@ -26,7 +30,7 @@ export function liquidation(message: MarkPriceEvent) {
                 userId,
                 side: liquidationSide,
                 type: "market",
-                price: null,
+                price: latestPrice,
                 qty: p.qty,
                 filledQty: 0,
                 status: "open",

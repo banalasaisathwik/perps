@@ -4,6 +4,7 @@ import { Server as HttpServer } from "http";
 import { sendToEngine } from "../redis/engine-client";
 
 const ORDERBOOK_STREAM = process.env.REDIS_STREAM_ORDERBOOK ?? "perps:events:orderbook";
+const MARK_PRICE_STREAM = process.env.REDIS_STREAM_MARK_PRICE ?? "perps:market:mark-price";
 
 type ClientSubs = Map<WebSocket, Set<string>>;
 
@@ -89,6 +90,57 @@ export function attachPriceWebSocket(server: HttpServer) {
         }
       } catch (err) {
         console.error("orderbook stream read error", err);
+        await new Promise((r) => setTimeout(r, 1000));
+      }
+    }
+  })();
+
+  // read new messages from the mark-price stream (published by the
+  // binance-events-backend poller, also consumed by the engine for
+  // liquidation checks) and broadcast to clients subscribed to that symbol
+  (async () => {
+    let lastId = "$"; // only new messages
+
+    for (;;) {
+      try {
+        const resp = (await client.xRead(
+          [{ key: MARK_PRICE_STREAM, id: lastId }],
+          { BLOCK: 2000, COUNT: 10 },
+        )) as unknown as Array<{ name: string; messages: Array<{ id: string; message: Record<string, string> }> }>;
+
+        if (!resp || resp.length === 0) continue;
+
+        for (const stream of resp) {
+          for (const entry of stream.messages) {
+            lastId = entry.id;
+            const raw = entry.message.data;
+            if (!raw) continue;
+
+            let payload: any;
+            try {
+              payload = JSON.parse(raw);
+            } catch (err) {
+              continue;
+            }
+
+            if (payload && payload.type === "mark_price" && typeof payload.symbol === "string") {
+              for (const [ws, subs] of clients.entries()) {
+                if (ws.readyState !== ws.OPEN) continue;
+                if (subs.has(payload.symbol)) {
+                  ws.send(
+                    JSON.stringify({
+                      type: "mark_price.update",
+                      symbol: payload.symbol,
+                      price: payload.latestPrice,
+                    }),
+                  );
+                }
+              }
+            }
+          }
+        }
+      } catch (err) {
+        console.error("mark price stream read error", err);
         await new Promise((r) => setTimeout(r, 1000));
       }
     }
