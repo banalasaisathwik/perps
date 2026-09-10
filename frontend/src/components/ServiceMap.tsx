@@ -1,49 +1,75 @@
-import { services } from "../data/services";
-import type { Flow } from "../types/dashboard";
+import type { ArchitectureActivity, ArchitectureNode } from "../types/dashboard";
 
 type ServiceMapProps = {
-  activeFlow: Flow;
+  activity: ArchitectureActivity;
 };
 
-export function ServiceMap({ activeFlow }: ServiceMapProps) {
+type NodeProps = {
+  activeNode: ArchitectureNode | null;
+  id: ArchitectureNode;
+  title: string;
+  detail: string;
+  tone?: "client" | "backend" | "redis" | "engine";
+};
+
+function ArchitectureNodeCard({ activeNode, detail, id, title, tone }: NodeProps) {
   return (
-    <section className={`panel service-map ${activeFlow}`}>
-      <div className="panel-title">
-        <span className="step-badge">1</span>
-        <span>How your order moves</span>
-        <span className="live-badge">Live updates</span>
+    <div className={`architecture-node ${tone ?? ""} ${activeNode === id ? "active" : ""}`}>
+      <b>{title}</b>
+      <p>{detail}</p>
+    </div>
+  );
+}
+
+function activityLabel(activity: ArchitectureActivity) {
+  switch (activity.kind) {
+    case "manual-request":
+      return "Order request moving";
+    case "manual-response":
+      return "Order response confirmed";
+    case "book-update":
+      return "Live order-book update";
+    case "mark-price":
+      return "Mark-price update";
+    default:
+      return "Hot trading path";
+  }
+}
+
+export function ServiceMap({ activity }: ServiceMapProps) {
+  const activeNode = activity.node;
+
+  return (
+    <section className="card architecture-card" id="architecture" aria-labelledby="architecture-heading">
+      <div className="card-head">
+        <b id="architecture-heading">Core architecture</b>
+        <small>{activityLabel(activity)}</small>
+        <small className="right">Engine owns trading state</small>
       </div>
 
-      <div className="map-grid">
-        {/* services is plain data, so the map can change without rewriting JSX. */}
-        {services.map((service) => (
-          <div key={service.id} className={`service-node ${service.id} ${service.lane}`}>
-            <span className="node-icon">{service.title.slice(0, 2).toUpperCase()}</span>
-            <strong>{service.title}</strong>
-            <small>{service.tech}</small>
-            <span className="node-health">Healthy</span>
-          </div>
-        ))}
+      <div className="architecture-body">
+        <div className="architecture-main">
+          <ArchitectureNodeCard activeNode={activeNode} id="client" title="React Client" detail="Order entry and live book rendering." tone="client" />
+          <span className="architecture-arrow" aria-hidden="true">↔</span>
+          <ArchitectureNodeCard activeNode={activeNode} id="backend" title="Backend" detail="REST API and WebSocket gateway." tone="backend" />
+          <span className="architecture-arrow" aria-hidden="true">↔</span>
+          <ArchitectureNodeCard activeNode={activeNode} id="redis" title="Redis Streams" detail="Inter-service transport." tone="redis" />
+          <span className="architecture-arrow" aria-hidden="true">↔</span>
+          <ArchitectureNodeCard activeNode={activeNode} id="engine" title="Matching Engine" detail="Books, matching, risk, and positions." tone="engine" />
+        </div>
 
-        {/* These empty elements become animated connection lines through CSS classes. */}
-        <div className="flow-line place a" />
-        <div className="flow-line place b" />
-        <div className="flow-line place c" />
-        <div className="flow-line place d" />
-        <div className="flow-line ws a" />
-        <div className="flow-line ws b" />
-        <div className="flow-line ws c" />
-        <div className="flow-line mark a" />
-        <div className="flow-line mark b" />
-        <div className="flow-line signup a" />
-        <div className="flow-line signup b" />
-      </div>
+        <div className="external-row" aria-label="External market-data route">
+          <span className={`external ${activeNode === "binance" ? "active" : ""}`}>Binance Futures</span>
+          <span aria-hidden="true">→</span>
+          <span className={`external ${activeNode === "mark-price" ? "active" : ""}`}>Mark Price Service</span>
+          <span aria-hidden="true">→ Redis → Engine</span>
+        </div>
 
-      <div className="map-legend">
-        <span><i className="legend-place" /> Order sent</span>
-        <span><i className="legend-ws" /> Price update</span>
-        <span><i className="legend-mark" /> Market price</span>
-        <span><i className="legend-signup" /> Sign up</span>
+        <div className="flow-summary">
+          <span><b>Manual order</b> Client → Backend → Redis → Engine</span>
+          <span><b>Confirmed response</b> Engine → Redis → Backend → Client</span>
+          <span><b>Live book</b> Engine → Redis → WebSocket → Client</span>
+        </div>
       </div>
     </section>
   );

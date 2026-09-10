@@ -1,12 +1,16 @@
-import type React from "react";
+import { useState, type FormEvent } from "react";
 import type { OrderType, Side } from "../types/dashboard";
 
 type OrderFormPanelProps = {
-  authStatus: "pending" | "ready" | "error";
+  authError: string;
+  authStatus: "idle" | "pending" | "ready" | "error";
+  botMessage: string;
+  botRunning: boolean;
   displaySymbol: string;
   leverage: string;
+  onAuthenticate: (action: "signin" | "signup", username: string, password: string) => void;
   onLeverageChange: (value: string) => void;
-  onPlaceOrder: (e: React.FormEvent) => void;
+  onPlaceOrder: (event: FormEvent) => void;
   onPriceChange: (value: string) => void;
   onQtyChange: (value: string) => void;
   onSetBestAsk: () => void;
@@ -14,6 +18,8 @@ type OrderFormPanelProps = {
   onSideChange: (side: Side) => void;
   onToggleBot: (start: boolean) => void;
   onTypeChange: (type: OrderType) => void;
+  orderMessage: string;
+  orderStatus: "idle" | "pending" | "success" | "error";
   orderType: OrderType;
   price: string;
   qty: string;
@@ -22,9 +28,13 @@ type OrderFormPanelProps = {
 };
 
 export function OrderFormPanel({
+  authError,
   authStatus,
+  botMessage,
+  botRunning,
   displaySymbol,
   leverage,
+  onAuthenticate,
   onLeverageChange,
   onPlaceOrder,
   onPriceChange,
@@ -34,122 +44,103 @@ export function OrderFormPanel({
   onSideChange,
   onToggleBot,
   onTypeChange,
+  orderMessage,
+  orderStatus,
   orderType,
   price,
   qty,
   side,
   username,
 }: OrderFormPanelProps) {
+  const [accountUsername, setAccountUsername] = useState("");
+  const [accountPassword, setAccountPassword] = useState("");
+  const isReady = authStatus === "ready";
+
   return (
-    <div className="panel order-form-panel">
-      <div className="panel-title">
-        <span className="step-badge">3</span>
-        <span>Place your trade</span>
+    <aside className="card order-form-panel" aria-labelledby="order-heading">
+      <div className="card-head">
+        <b id="order-heading">Order</b>
+        <small className="right">{displaySymbol}</small>
       </div>
 
-      <form onSubmit={onPlaceOrder} className="order-form">
-        <label>
-          Symbol
-          <input value={displaySymbol} readOnly />
-        </label>
-
-        <label>
-          How to buy or sell
-          <div className="segmented">
-            <button
-              // The selected class is visual state; the actual state lives in useDashboardRuntime.
-              className={orderType === "limit" ? "selected" : ""}
-              type="button"
-              onClick={() => onTypeChange("limit")}
-            >
-              Limit
-            </button>
-            <button
-              className={orderType === "market" ? "selected" : ""}
-              type="button"
-              onClick={() => onTypeChange("market")}
-            >
-              Market
-            </button>
-          </div>
-        </label>
-
-        <label>
-          Side
-          <div className="segmented">
-            <button
-              // Backend expects "long" / "short"; the UI labels translate that into trader language.
-              className={side === "long" ? "selected buy" : ""}
-              type="button"
-              onClick={() => onSideChange("long")}
-            >
-              Buy / Long
-            </button>
-            <button
-              className={side === "short" ? "selected sell" : ""}
-              type="button"
-              onClick={() => onSideChange("short")}
-            >
-              Sell / Short
-            </button>
-          </div>
-        </label>
-
-        {/* Market orders do not need a user-entered price; the engine chooses from book liquidity. */}
-        {orderType === "limit" && (
-          <label>
-            Price
-            <input
-              inputMode="decimal"
-              value={price}
-              onChange={(e) => onPriceChange(e.target.value)}
-            />
-          </label>
+      <form className="order-form" onSubmit={onPlaceOrder}>
+        {!isReady && (
+          <fieldset className="account-fields">
+            <legend>Sign in to trade</legend>
+            <div className="account-inputs">
+              <label>
+                Username
+                <input autoComplete="username" value={accountUsername} onChange={(event) => setAccountUsername(event.target.value)} />
+              </label>
+              <label>
+                Password
+                <input autoComplete="current-password" type="password" value={accountPassword} onChange={(event) => setAccountPassword(event.target.value)} />
+              </label>
+            </div>
+            <div className="account-actions">
+              <button type="button" disabled={authStatus === "pending"} onClick={() => onAuthenticate("signin", accountUsername, accountPassword)}>Sign in</button>
+              <button type="button" disabled={authStatus === "pending"} onClick={() => onAuthenticate("signup", accountUsername, accountPassword)}>Create account</button>
+            </div>
+            {authStatus === "pending" && <p>Signing in…</p>}
+            {authStatus === "error" && <p className="error-message">{authError}</p>}
+          </fieldset>
         )}
 
-        <label>
-          Quantity
-          <input
-            inputMode="decimal"
-            value={qty}
-            onChange={(e) => onQtyChange(e.target.value)}
-          />
-        </label>
-
-        <label>
-          Leverage
-          <input
-            inputMode="decimal"
-            value={leverage}
-            onChange={(e) => onLeverageChange(e.target.value)}
-          />
-        </label>
-
-        <div className="form-actions">
-          <button className="btn btn-primary" type="submit" disabled={authStatus !== "ready"}>
-            {/* Text follows the current order type, but submit handler stays the same. */}
-            Review and place order
-          </button>
-          <button className="btn btn-danger" type="button" onClick={() => onToggleBot(false)}>
-            Pause price bot
-          </button>
-          <button className="btn btn-ghost" type="button" onClick={() => onToggleBot(true)}>
-            Start price bot
-          </button>
-          <button className="btn btn-ghost green-outline" type="button" onClick={onSetBestBid}>
-            Use best buy price
-          </button>
-          <button className="btn btn-ghost red-outline" type="button" onClick={onSetBestAsk}>
-            Use best sell price
-          </button>
+        <div className="side-toggle" aria-label="Trade side">
+          <button className={side === "long" ? "selected long" : ""} type="button" onClick={() => onSideChange("long")}>Long</button>
+          <button className={side === "short" ? "selected short" : ""} type="button" onClick={() => onSideChange("short")}>Short</button>
         </div>
 
-        <p className="token-field auth-status">
-          {authStatus === "pending" && "Signing in..."}
-          {authStatus === "ready" && `Signed in as ${username}`}
-          {authStatus === "error" && "Sign-in failed — retry by reloading"}
-        </p>
+        <div className="order-type-row">
+          <span>Order type</span>
+          <div className="order-type-toggle">
+            <button className={orderType === "limit" ? "selected" : ""} type="button" onClick={() => onTypeChange("limit")}>Limit</button>
+            <button className={orderType === "market" ? "selected" : ""} type="button" onClick={() => onTypeChange("market")}>Market</button>
+          </div>
+        </div>
+
+        {orderType === "limit" ? (
+          <label className="field">
+            <small>Price</small>
+            <input inputMode="decimal" value={price} onChange={(event) => onPriceChange(event.target.value)} />
+            <span className="field-suffix">USD</span>
+            <span className="price-actions">
+              <button type="button" onClick={onSetBestBid}>Best bid</button>
+              <button type="button" onClick={onSetBestAsk}>Best ask</button>
+            </span>
+          </label>
+        ) : (
+          <div className="field market-field"><small>Price</small><b>Market execution</b></div>
+        )}
+
+        <label className="field">
+          <small>Quantity</small>
+          <input inputMode="decimal" value={qty} onChange={(event) => onQtyChange(event.target.value)} />
+          <span className="field-suffix">BTC</span>
+        </label>
+
+        <label className="field">
+          <small>Leverage</small>
+          <input inputMode="decimal" value={leverage} onChange={(event) => onLeverageChange(event.target.value)} />
+          <span className="field-suffix">×</span>
+        </label>
+
+        <button className={`place-button ${side}`} type="submit" disabled={!isReady || orderStatus === "pending"}>
+          {orderStatus === "pending" ? "Placing order…" : `Place ${side === "long" ? "Long" : "Short"}`}
+        </button>
+
+        {isReady && <p className="session-status">Signed in as {username}</p>}
+        {orderStatus !== "idle" && <p className={`execution-feedback ${orderStatus}`} role="status">{orderMessage}</p>}
+
+        <div className="bot-controls">
+          <div className="bot-heading"><b>Liquidity Bot</b><span className={botRunning ? "running" : ""}>{botRunning ? "RUNNING" : "STOPPED"}</span></div>
+          <div className="bot-buttons">
+            <button className={botRunning ? "active" : ""} type="button" onClick={() => onToggleBot(true)}>Start Bot</button>
+            <button className={!botRunning ? "active" : ""} type="button" onClick={() => onToggleBot(false)}>Stop Bot</button>
+          </div>
+          {botMessage && <p className="bot-message" role="status">{botMessage}</p>}
+        </div>
       </form>
-    </div>
+    </aside>
   );
 }

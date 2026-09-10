@@ -23,21 +23,16 @@ export type RecentOrder = {
   fillPrices: number[];
 };
 
-export type Flow = "place-order" | "ws-update" | "mark-price" | "signup" | "idle";
+export type ArchitectureNode =
+  | "client"
+  | "backend"
+  | "redis"
+  | "engine"
+  | "binance"
+  | "mark-price";
 
+export type ArchitectureActivity = {
+  kind: "idle" | "manual-request" | "manual-response" | "book-update" | "mark-price";
+  node: ArchitectureNode | null;
+};
 export type ConnectionStatus = "checking" | "connected" | "offline";
-
-export type TimelineEvent = {
-  id: number;
-  time: string;
-  source: string;
-  event: string;
-  details: string;
-};
-
-export type ServiceNode = {
-  id: string;
-  title: string;
-  tech: string;
-  lane: "main" | "support";
-};

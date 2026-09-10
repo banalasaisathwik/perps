@@ -3,7 +3,6 @@ import { DashboardHeader } from "./components/DashboardHeader";
 import { OrderBookPanel } from "./components/OrderBookPanel";
 import { OrderFormPanel } from "./components/OrderFormPanel";
 import { ServiceMap } from "./components/ServiceMap";
-import { TimelinePanel } from "./components/TimelinePanel";
 import { DISPLAY_SYMBOL } from "./data/orderBookSeed";
 import { useDashboardRuntime } from "./hooks/useDashboardRuntime";
 
@@ -15,11 +14,18 @@ function App() {
     <main className="dashboard-shell">
       <DashboardHeader
         backendStatus={dashboard.backendStatus}
-        botRunning={dashboard.botRunning}
         wsStatus={dashboard.wsStatus}
       />
 
-      <ServiceMap activeFlow={dashboard.activeFlow} />
+      <section className="intro" aria-labelledby="dashboard-title">
+        <h1 id="dashboard-title">Perpetual exchange,<br />visible end to end.</h1>
+        <p>
+          Trade against the live book while the active route shows how your
+          order and market data move through the exchange.
+        </p>
+      </section>
+
+      <ServiceMap activity={dashboard.architectureActivity} />
 
       <section className="trade-grid">
         {/* Render-only panels receive already-prepared values and callbacks from the hook. */}
@@ -35,9 +41,13 @@ function App() {
 
         <OrderFormPanel
           authStatus={dashboard.authStatus}
+          authError={dashboard.authError}
           displaySymbol={DISPLAY_SYMBOL}
           leverage={dashboard.leverage}
           onLeverageChange={dashboard.setLeverage}
+          onAuthenticate={dashboard.authenticate}
+          orderMessage={dashboard.orderMessage}
+          orderStatus={dashboard.orderStatus}
           onPlaceOrder={dashboard.placeOrder}
           onPriceChange={dashboard.setPrice}
           onQtyChange={dashboard.setQty}
@@ -50,14 +60,11 @@ function App() {
           price={dashboard.price}
           qty={dashboard.qty}
           side={dashboard.side}
+          botMessage={dashboard.botMessage}
+          botRunning={dashboard.botRunning}
           username={dashboard.username}
         />
       </section>
-
-      <TimelinePanel
-        events={dashboard.timeline}
-        onClear={dashboard.clearTimeline}
-      />
     </main>
   );
 }

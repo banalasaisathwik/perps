@@ -1,353 +1,278 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { seedAsks, seedBids, SYMBOL } from "../data/orderBookSeed";
 import type {
+  ArchitectureActivity,
+  ArchitectureNode,
   ConnectionStatus,
-  RecentOrder,
-  Flow,
   Level,
   OrderType,
+  RecentOrder,
   Side,
-  TimelineEvent,
 } from "../types/dashboard";
 import { addTotals, getMidPrice, getSpread } from "../utils/orderBook";
-import { nowTime } from "../utils/time";
+
+type AuthenticationStatus = "idle" | "pending" | "ready" | "error";
+type SubmissionStatus = "idle" | "pending" | "success" | "error";
+
+type DepthPayload = {
+  asks?: Level[];
+  bids?: Level[];
+};
+
+type OrderResponse = {
+  filledQty?: number;
+  fills?: Array<{ price?: number }>;
+  side?: Side;
+  status?: string;
+};
+
+type WebSocketMessage = DepthPayload & {
+  data?: DepthPayload;
+  price?: number;
+  type?: string;
+};
+
+const IDLE_ACTIVITY: ArchitectureActivity = { kind: "idle", node: null };
+const STEP_DELAY_MS = 230;
 
 export function useDashboardRuntime() {
-  // Vite exposes browser env vars through import.meta.env. The dev runner sets
-  // VITE_API_URL to whichever backend port is free, for example http://localhost:3001.
-  const API_BASE =
-    (import.meta.env.VITE_API_URL as string) ?? "http://localhost:3000";
-
-  // Seeded data makes the dashboard useful before the backend returns live depth.
-  // When REST or WebSocket data arrives, these arrays are replaced.
+  // VITE_API_URL remains the single browser-to-backend boundary. The local
+  // fallback is useful when the frontend is started without the dev runner.
+  const API_BASE = (import.meta.env.VITE_API_URL as string) ?? "http://localhost:3000";
   const [bids, setBids] = useState<Level[]>(seedBids);
   const [asks, setAsks] = useState<Level[]>(seedAsks);
-  const [backendStatus, setBackendStatus] =
-    useState<ConnectionStatus>("checking");
+  const [backendStatus, setBackendStatus] = useState<ConnectionStatus>("checking");
   const [wsStatus, setWsStatus] = useState("disconnected");
   const [botRunning, setBotRunning] = useState(false);
+  const [botMessage, setBotMessage] = useState("");
   const [orderType, setOrderType] = useState<OrderType>("limit");
   const [side, setSide] = useState<Side>("long");
   const [price, setPrice] = useState(String(seedBids[0].price));
   const [qty, setQty] = useState("0.250");
   const [leverage, setLeverage] = useState("10");
-  const [token, setToken] = useState("");
-  const [username, setUsername] = useState("");
-  const [authStatus, setAuthStatus] = useState<"pending" | "ready" | "error">(
-    "pending",
+  const [token, setToken] = useState(() => localStorage.getItem("perps_token") ?? "");
+  const [username, setUsername] = useState(() => localStorage.getItem("perps_username") ?? "");
+  const [authStatus, setAuthStatus] = useState<AuthenticationStatus>(() =>
+    localStorage.getItem("perps_token") && localStorage.getItem("perps_username") ? "ready" : "idle",
   );
-  const [activeFlow, setActiveFlow] = useState<Flow>("idle");
-    const [recentOrder, setRecentOrder] = useState<RecentOrder | null>(null);
+  const [authError, setAuthError] = useState("");
+  const [orderStatus, setOrderStatus] = useState<SubmissionStatus>("idle");
+  const [orderMessage, setOrderMessage] = useState("");
+  const [architectureActivity, setArchitectureActivity] = useState<ArchitectureActivity>(IDLE_ACTIVITY);
+  const [recentOrder, setRecentOrder] = useState<RecentOrder | null>(null);
   const [markPrice, setMarkPrice] = useState<number | null>(null);
-  const [timeline, setTimeline] = useState<TimelineEvent[]>([
-    {
-      id: 1,
-      time: nowTime(),
-      source: "System",
-      event: "Dashboard booted",
-      details: "Seeded BTC order book loaded while live services connect",
-    },
-  ]);
-  // Refs keep mutable values between renders without causing another render.
-  // eventIdRef prevents duplicate React keys; flowTimeoutRef lets us cancel an old animation timer.
-  const eventIdRef = useRef(2);
-  const flowTimeoutRef = useRef<number | null>(null);
+  const animationIdRef = useRef(0);
 
-  function pushEvent(source: string, event: string, details: string) {
-    const nextEvent = {
-      id: eventIdRef.current,
-      time: nowTime(),
-      source,
-      event,
-      details,
-    };
-    eventIdRef.current += 1;
-    setTimeline((items) => [nextEvent, ...items].slice(0, 12));
-  }
-
-  function pulseFlow(flow: Flow) {
-    // activeFlow is also a CSS class. App.css uses it to highlight the correct path.
-    setActiveFlow(flow);
-    if (flowTimeoutRef.current) {
-      window.clearTimeout(flowTimeoutRef.current);
-    }
-    flowTimeoutRef.current = window.setTimeout(() => setActiveFlow("idle"), 2400);
-  }
-
-  // useMemo avoids recalculating cumulative totals on unrelated state changes
-  // such as typing in the order form.
-  const frontendAsks = useMemo(() => [...asks].reverse(), [asks]);
-  const askTotals = useMemo(() => addTotals(frontendAsks), [frontendAsks]);
+  // Bids are shown best-first. Asks are shown highest-first like the approved
+  // reference, but totals are still calculated from the best ask outward.
   const bidTotals = useMemo(() => addTotals(bids.slice(0, 11)), [bids]);
+  const askTotals = useMemo(() => addTotals(asks.slice(0, 11)).reverse(), [asks]);
   const midPrice = getMidPrice(bids, asks);
   const spread = getSpread(bids, asks);
 
-  useEffect(() => {
-    // Order creation now requires auth, so every session needs a token. Reuse
-    // one saved from a previous visit, or provision a throwaway guest account.
-    const savedToken = localStorage.getItem("perps_token");
-    const savedUsername = localStorage.getItem("perps_username");
+  async function animateArchitecture(
+    kind: ArchitectureActivity["kind"],
+    nodes: ArchitectureNode[],
+  ) {
+    const animationId = animationIdRef.current + 1;
+    animationIdRef.current = animationId;
 
-    if (savedToken && savedUsername) {
-      setToken(savedToken);
-      setUsername(savedUsername);
-      setAuthStatus("ready");
-      pushEvent(
-        "Frontend",
-        "Restored session",
-        `Reused saved token for ${savedUsername}`,
-      );
+    for (const node of nodes) {
+      if (animationId !== animationIdRef.current) {
+        return;
+      }
+      setArchitectureActivity({ kind, node });
+      await new Promise<void>((resolve) => window.setTimeout(resolve, STEP_DELAY_MS));
+    }
+
+    if (animationId === animationIdRef.current) {
+      setArchitectureActivity(IDLE_ACTIVITY);
+    }
+  }
+
+  function cancelArchitectureAnimation() {
+    animationIdRef.current += 1;
+    setArchitectureActivity(IDLE_ACTIVITY);
+  }
+
+  async function authenticate(
+    action: "signin" | "signup",
+    submittedUsername: string,
+    submittedPassword: string,
+  ) {
+    const cleanUsername = submittedUsername.trim();
+    if (!cleanUsername || !submittedPassword) {
+      setAuthError("Enter both a username and password.");
+      setAuthStatus("error");
       return;
     }
 
-    const guestUsername = `guest_${Math.random().toString(36).slice(2, 10)}`;
-    const guestPassword = crypto.randomUUID();
-
-    // Signup writes the new account to Postgres before a token comes back,
-    // so the flow animation starts here rather than after the response.
-    pulseFlow("signup");
-    fetch(`${API_BASE}/signup`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ username: guestUsername, password: guestPassword }),
-    })
-      .then((r) => {
-        if (!r.ok) {
-          throw new Error(`HTTP ${r.status}`);
-        }
-        return r.json();
-      })
-      .then((data: { token?: string; username?: string }) => {
-        if (!data.token || !data.username) {
-          throw new Error("Signup response missing token or username");
-        }
-        localStorage.setItem("perps_token", data.token);
-        localStorage.setItem("perps_username", data.username);
-        setToken(data.token);
-        setUsername(data.username);
-        setAuthStatus("ready");
-        pushEvent(
-          "Backend REST",
-          "POST /signup",
-          `Provisioned guest session for ${data.username}`,
-        );
-      })
-      .catch((error) => {
-        setAuthStatus("error");
-        pushEvent(
-          "Backend REST",
-          "Guest sign-in failed",
-          error instanceof Error ? error.message : "Unknown signup error",
-        );
+    setAuthError("");
+    setAuthStatus("pending");
+    try {
+      const response = await fetch(`${API_BASE}/${action}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username: cleanUsername, password: submittedPassword }),
       });
+      const data = (await response.json().catch(() => null)) as
+        | { error?: string; token?: string; username?: string }
+        | null;
+
+      if (!response.ok) {
+        throw new Error(data?.error ?? `HTTP ${response.status}`);
+      }
+      if (!data?.token || !data.username) {
+        throw new Error("The server did not return a session token.");
+      }
+
+      localStorage.setItem("perps_token", data.token);
+      localStorage.setItem("perps_username", data.username);
+      setToken(data.token);
+      setUsername(data.username);
+      setAuthStatus("ready");
+    } catch (error) {
+      setAuthError(error instanceof Error ? error.message : "Unable to reach the server.");
+      setAuthStatus("error");
+    }
+  }
+
+  useEffect(() => {
+    void fetch(`${API_BASE}/health`)
+      .then((response) => {
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}`);
+        }
+        return response.json();
+      })
+      .then(() => setBackendStatus("connected"))
+      .catch(() => setBackendStatus("offline"));
   }, [API_BASE]);
 
   useEffect(() => {
-    // Health check proves that the browser can reach the backend currently
-    // injected through VITE_API_URL.
-    fetch(`${API_BASE}/health`)
-      .then((r) => {
-        if (!r.ok) {
-          throw new Error(`HTTP ${r.status}`);
+    void fetch(`${API_BASE}/depth/${SYMBOL}`)
+      .then((response) => {
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}`);
         }
-        return r.json();
+        return response.json() as Promise<DepthPayload>;
       })
-      .then(() => {
-        setBackendStatus("connected");
-        pushEvent("Backend REST", "GET /health", `Connected to ${API_BASE}`);
-      })
-      .catch(() => {
-        setBackendStatus("offline");
-        pushEvent(
-          "Backend REST",
-          "Health check failed",
-          `Could not reach ${API_BASE}`,
-        );
-      });
-  }, [API_BASE]);
-
-  useEffect(() => {
-    // Initial snapshot comes over REST. Later changes arrive over WebSocket.
-    fetch(`${API_BASE}/depth/${SYMBOL}`)
-      .then((r) => r.json())
       .then((data) => {
-        if (Array.isArray(data.bids) && data.bids.length > 0) {
+        if (Array.isArray(data.bids)) {
           setBids(data.bids);
         }
-        if (Array.isArray(data.asks) && data.asks.length > 0) {
+        if (Array.isArray(data.asks)) {
           setAsks(data.asks);
         }
-        pushEvent(
-          "Backend REST",
-          "GET /depth/:symbol",
-          "Initial depth returned from engine via Redis RPC",
-        );
       })
-      .catch(() => {
-        pushEvent(
-          "Frontend",
-          "Depth fallback active",
-          "Using seeded book because REST depth is unavailable",
-        );
-      });
+      // Seed data is intentionally retained as an offline visual fallback.
+      .catch(() => undefined);
 
-    // Derive the WebSocket URL from the REST base URL so both always point
-    // to the same backend process and port.
     const apiUrl = new URL(API_BASE);
     const wsProtocol = apiUrl.protocol === "https:" ? "wss" : "ws";
     const ws = new WebSocket(`${wsProtocol}://${apiUrl.host}/ws`);
 
     ws.onopen = () => {
       setWsStatus("connected");
-      // The backend stores subscriptions per socket, so it only sends this
-      // client order-book updates for SYMBOL.
       ws.send(JSON.stringify({ op: "subscribe", symbol: SYMBOL }));
-      pushEvent("Frontend", "Subscribed to /ws", `symbol=${SYMBOL}`);
     };
 
-    ws.onmessage = (ev) => {
+    ws.onmessage = (event) => {
       try {
-        const msg = JSON.parse(ev.data);
-        if (
-          msg.type === "orderbook.snapshot" ||
-          (msg.type === "orderbook.update" && msg.data)
-        ) {
-          // snapshot and update messages both carry bids/asks; normalize them
-          // into the same payload before updating React state.
-          const payload = msg.data ?? msg;
+        const message = JSON.parse(event.data) as WebSocketMessage;
+        if (message.type === "orderbook.snapshot" || message.type === "orderbook.update") {
+          const payload: DepthPayload = message.data ?? message;
           if (Array.isArray(payload.bids)) {
             setBids(payload.bids);
           }
           if (Array.isArray(payload.asks)) {
             setAsks(payload.asks);
           }
-          pulseFlow("ws-update");
-          pushEvent(
-            "Backend WS",
-            "orderbook.update received",
-            "Engine snapshot reached frontend through Redis orderbook stream",
-          );
-        } else if (msg.type === "mark_price.update" && typeof msg.price === "number") {
-          setMarkPrice(msg.price);
-          pulseFlow("mark-price");
-          pushEvent(
-            "Backend WS",
-            "mark_price.update received",
-            `Binance -> Mark Price Poller -> engine -> frontend: ${msg.symbol ?? SYMBOL} @ ${msg.price}`,
-          );
+          // This route is only started after a real subscribed WebSocket event.
+          void animateArchitecture("book-update", ["engine", "redis", "backend", "client"]);
+        } else if (message.type === "mark_price.update" && typeof message.price === "number") {
+          setMarkPrice(message.price);
+          void animateArchitecture("mark-price", ["binance", "mark-price", "redis", "engine"]);
         }
       } catch {
-        pushEvent(
-          "Frontend",
-          "Ignored WS payload",
-          "Message was not valid JSON for the dashboard",
-        );
+        // Ignore unrelated or malformed messages without taking down the socket.
       }
     };
 
-    ws.onclose = () => {
-      setWsStatus("closed");
-      pushEvent("Backend WS", "WebSocket closed", "Live order book updates stopped");
-    };
+    ws.onclose = () => setWsStatus("closed");
+    ws.onerror = () => setWsStatus("offline");
 
     return () => {
       try {
-        // Cleanup is important in React dev mode because effects can remount;
-        // unsubscribing prevents duplicate sockets and duplicate events.
         ws.send(JSON.stringify({ op: "unsubscribe", symbol: SYMBOL }));
         ws.close();
       } catch {
-        // no-op during teardown
+        // The browser may already have closed the connection during teardown.
       }
-      if (flowTimeoutRef.current) {
-        window.clearTimeout(flowTimeoutRef.current);
-      }
+      cancelArchitectureAnimation();
     };
   }, [API_BASE]);
 
   useEffect(() => {
-    fetch(`${API_BASE}/bot/status`)
-      .then((r) => r.json())
-      .then((status) => setBotRunning(Boolean(status.running)))
-      .catch(() => {});
+    void fetch(`${API_BASE}/bot/status`)
+      .then((response) => {
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}`);
+        }
+        return response.json() as Promise<{ running?: boolean }>;
+      })
+      .then((status) => setBotRunning(status.running === true))
+      .catch(() => setBotMessage("Bot controls are unavailable while the backend is offline."));
   }, [API_BASE]);
 
-  async function placeOrder(e: React.FormEvent) {
-    e.preventDefault();
-    // Inputs are kept as strings so users can edit them naturally; convert to
-    // numbers only when building the backend request payload.
+  async function placeOrder(event: FormEvent) {
+    event.preventDefault();
+    if (authStatus !== "ready" || orderStatus === "pending") {
+      return;
+    }
+
     const numericQty = Number(qty);
     const numericLeverage = Number(leverage);
     const numericPrice = Number(price);
-    const body =
-      orderType === "market"
-        ? {
-            type: "market",
-            side,
-            symbol: SYMBOL,
-            qty: numericQty,
-            leverage: numericLeverage,
-          }
-        : {
-            type: "limit",
-            side,
-            symbol: SYMBOL,
-            price: numericPrice,
-            qty: numericQty,
-            leverage: numericLeverage,
-          };
+    const body = orderType === "market"
+      ? { type: "market" as const, side, symbol: SYMBOL, qty: numericQty, leverage: numericLeverage }
+      : { type: "limit" as const, side, symbol: SYMBOL, price: numericPrice, qty: numericQty, leverage: numericLeverage };
 
-    // These timeline events mirror the real backend architecture:
-    // REST request -> Redis command stream -> engine -> Redis response stream.
-    pulseFlow("place-order");
-    pushEvent(
-      "Frontend",
-      "POST /create-order",
-      `symbol=${SYMBOL} side=${side} type=${orderType} qty=${numericQty}`,
-    );
-    pushEvent(
-      "Backend REST",
-      "XADD perps:engine:commands",
-      "Command queued for the engine with a correlation id",
-    );
+    setOrderStatus("pending");
+    setOrderMessage("Sending order to the trade engine…");
+    // A request animation starts from the only fact known at submit time: the
+    // React client initiated an HTTP order request.
+    const requestAnimation = animateArchitecture("manual-request", ["client", "backend", "redis", "engine"]);
 
     try {
       const response = await fetch(`${API_BASE}/create-order`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          // Auth is mandatory; a token is auto-provisioned on mount (see the
-          // sign-in effect above) before the form is ever enabled for submit.
           ...(token ? { Authorization: `Bearer ${token}` } : {}),
         },
         body: JSON.stringify(body),
       });
-
+      const result = (await response.json().catch(() => null)) as (OrderResponse & { error?: string }) | null;
       if (!response.ok) {
-        throw new Error(`HTTP ${response.status}`);
+        throw new Error(result?.error ?? `HTTP ${response.status}`);
       }
 
-      const orderResult = (await response.json()) as {
-        side?: Side;
-        status?: string;
-        filledQty?: number;
-        fills?: Array<{ price?: number }>;
-      };
-      const fillPrices = (orderResult.fills ?? [])
+      await requestAnimation;
+      // The engine result has reached the browser through the actual HTTP
+      // response, so the return route is now safe to display.
+      await animateArchitecture("manual-response", ["engine", "redis", "backend", "client"]);
+
+      const status = result?.status === "open" || result?.status === "partially_filled" || result?.status === "filled" || result?.status === "cancelled"
+        ? result.status
+        : "cancelled";
+      const fillPrices = (result?.fills ?? [])
         .map((fill) => fill.price)
         .filter((fillPrice): fillPrice is number => typeof fillPrice === "number");
-
-const status =
-        orderResult.status === "open" ||
-        orderResult.status === "partially_filled" ||
-        orderResult.status === "filled" ||
-        orderResult.status === "cancelled"
-          ? orderResult.status
-          : "cancelled";
-      const filledQty = typeof orderResult.filledQty === "number" ? orderResult.filledQty : 0;
+      const filledQty = typeof result?.filledQty === "number" ? result.filledQty : 0;
 
       setRecentOrder({
-        side: orderResult.side === "short" ? "short" : "long",
+        side: result?.side === "short" ? "short" : "long",
         type: orderType,
         status,
         requestedPrice: orderType === "limit" ? numericPrice : null,
@@ -355,47 +280,40 @@ const status =
         filledQty,
         fillPrices,
       });
-
-      if (status === "filled" || status === "partially_filled") {
-        pushEvent(
-          "Engine",
-          "Order matched",
-          `${filledQty} ${SYMBOL} matched. The order book highlights the exact price used.`,
-        );
-      } else if (status === "open") {
-        pushEvent(
-          "Engine",
-          "Order added to the book",
-          "The order is waiting at the highlighted price for a matching trader.",
-        );
-      } else {
-        pushEvent("Engine", "Order cancelled", "No matching price was available.");
-      }
+      setOrderStatus("success");
+      setOrderMessage(status === "open" ? "Order accepted and waiting in the book." : "Order accepted by the matching engine.");
     } catch (error) {
-      pushEvent(
-        "Backend REST",
-        "Order request failed",
-        error instanceof Error ? error.message : "Unknown order error",
-      );
+      await requestAnimation;
+      cancelArchitectureAnimation();
+      setOrderStatus("error");
+      setOrderMessage(error instanceof Error ? error.message : "Unable to place the order.");
     }
   }
 
   async function toggleBot(start: boolean) {
+    setBotMessage(start ? "Starting liquidity bot…" : "Stopping liquidity bot…");
     try {
-      // Bot generation lives in the backend so generated orders use the same
-      // Redis/engine path as a manual order from the form.
-      const url = `${API_BASE}/bot/${start ? "start" : "stop"}`;
-      await fetch(url, { method: "POST" });
-      setBotRunning(start);
-      pulseFlow(start ? "place-order" : "idle");
-      pushEvent("Bot", start ? "Started order bot" : "Stopped order bot", `symbol=${SYMBOL}`);
-    } catch {
-      pushEvent("Bot", "Bot control failed", "Backend bot endpoint is unavailable");
+      const response = await fetch(`${API_BASE}/bot/${start ? "start" : "stop"}`, { method: "POST" });
+      const result = (await response.json().catch(() => null)) as {
+        error?: string;
+        reason?: string;
+        started?: boolean;
+        stopped?: boolean;
+      } | null;
+      const running = start
+        ? result?.started === true || result?.reason === "already_running"
+        : !(result?.stopped === true || result?.reason === "not_running");
+      if (!response.ok || (start && !running) || (!start && running)) {
+        throw new Error(result?.error ?? `HTTP ${response.status}`);
+      }
+      setBotRunning(running);
+      setBotMessage(running ? "Liquidity bot running." : "Liquidity bot stopped.");
+    } catch (error) {
+      setBotMessage(error instanceof Error ? error.message : "Unable to update bot state.");
     }
   }
 
   function setBestAsk() {
-    // Convenience buttons read from the latest live book, falling back to seed data.
     setPrice(String(asks[0]?.price ?? seedAsks[0].price));
   }
 
@@ -403,26 +321,26 @@ const status =
     setPrice(String(bids[0]?.price ?? seedBids[0].price));
   }
 
-  function clearTimeline() {
-    setTimeline([]);
-  }
-
   return {
-    activeFlow,
-    recentOrder,
+    architectureActivity,
     askTotals,
+    authError,
+    authenticate,
     authStatus,
     backendStatus,
     bidTotals,
+    botMessage,
     botRunning,
-    clearTimeline,
     leverage,
     markPrice,
     midPrice,
+    orderMessage,
+    orderStatus,
     orderType,
     placeOrder,
     price,
     qty,
+    recentOrder,
     setBestAsk,
     setBestBid,
     setLeverage,
@@ -430,11 +348,8 @@ const status =
     setPrice,
     setQty,
     setSide,
-    setToken,
     side,
     spread,
-    timeline,
-    token,
     toggleBot,
     username,
     wsStatus,

@@ -2,34 +2,31 @@ import type { ConnectionStatus } from "../types/dashboard";
 
 type DashboardHeaderProps = {
   backendStatus: ConnectionStatus;
-  botRunning: boolean;
   wsStatus: string;
 };
 
 export function DashboardHeader({
   backendStatus,
-  botRunning,
   wsStatus,
 }: DashboardHeaderProps) {
   return (
-    <section className="dashboard-header">
-      <div>
-        <div className="eyebrow">Perps trading</div>
-        <h1>Trade with a clear view</h1>
-      </div>
+    <header className="dashboard-header">
+      <div className="brand">PERPS<span>.</span></div>
+      <nav className="nav" aria-label="Primary navigation">
+        <a href="#architecture">Architecture</a>
+        <a href="#trade">Trade</a>
+      </nav>
+      <div className="grow" />
       <div className="status-stack">
         <span
           className={`status-pill ${backendStatus === "connected" ? "healthy" : "warn"}`}
         >
-          Trading service {backendStatus}
+          REST <b>{backendStatus === "connected" ? "●" : "○"}</b>
         </span>
         <span className={`status-pill ${wsStatus === "connected" ? "healthy" : "warn"}`}>
-          Live prices {wsStatus}
-        </span>
-        <span className={`status-pill ${botRunning ? "active" : ""}`}>
-          Price bot {botRunning ? "running" : "paused"}
+          WS <b>{wsStatus === "connected" ? "●" : "○"}</b>
         </span>
       </div>
-    </section>
+    </header>
   );
 }

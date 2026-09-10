@@ -14,19 +14,45 @@ function hasExactPrice(prices: number[], price: number) {
   return prices.some((candidate) => Math.abs(candidate - price) < 0.0001);
 }
 
-function getOrderExplanation(order: RecentOrder, displaySymbol: string) {
-  const direction = order.side === "long" ? "Buy" : "Sell";
-
+function latestOrderText(order: RecentOrder) {
+  const action = order.side === "long" ? "Long" : "Short";
   if (order.status === "open") {
-    return `${direction} order is waiting at ${order.requestedPrice?.toFixed(1)}. The glowing row is your order in the book.`;
+    return `${action} order accepted and waiting in the book.`;
   }
-
-  if (order.status === "cancelled") {
-    return `${direction} order was not matched. No price row is highlighted.`;
+  if (order.status === "filled") {
+    return `${action} order filled: ${order.filledQty.toFixed(3)} BTC.`;
   }
+  if (order.status === "partially_filled") {
+    return `${action} order partly filled: ${order.filledQty.toFixed(3)} BTC.`;
+  }
+  return `${action} order cancelled by the engine.`;
+}
 
-  const filledWord = order.status === "filled" ? "was fully matched" : "was partly matched";
-  return `${direction} order ${filledWord}: ${order.filledQty.toFixed(3)} ${displaySymbol}. The glowing row supplied the match.`;
+type BookTableProps = {
+  levels: LevelWithTotal[];
+  side: "asks" | "bids";
+  highlightPrices: number[];
+};
+
+function BookTable({ highlightPrices, levels, side }: BookTableProps) {
+  const isAsk = side === "asks";
+  return (
+    <div className={`book ${isAsk ? "sell" : "buy"}`}>
+      <div className="book-head"><b>{isAsk ? "Sell Orders" : "Buy Orders"}</b><small>{isAsk ? "ASKS" : "BIDS"}</small></div>
+      <div className="book-columns"><span>Price</span><span>Size</span><span>Total</span></div>
+      <div className="book-levels">
+        {levels.length === 0 ? (
+          <p className="empty-book">No live levels</p>
+        ) : levels.map((level) => (
+          <div key={level.price} className={`book-level ${hasExactPrice(highlightPrices, level.price) ? "order-glow" : ""}`}>
+            <span>{level.price.toFixed(1)}</span>
+            <span>{level.qty.toFixed(3)}</span>
+            <span>{level.total.toFixed(3)}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
 }
 
 export function OrderBookPanel({
@@ -38,123 +64,34 @@ export function OrderBookPanel({
   recentOrder,
   spread,
 }: OrderBookPanelProps) {
-  const isWaiting = recentOrder?.status === "open";
-  const isMatched = recentOrder?.status === "filled" || recentOrder?.status === "partially_filled";
-
-  // A resting Buy/Long is on bids; a resting Sell/Short is on asks.
-  // A matched Buy/Long consumes asks; a matched Sell/Short consumes bids.
-  const highlightBids = recentOrder
-    ? isWaiting
-      ? recentOrder.side === "long" && recentOrder.requestedPrice !== null
-        ? [recentOrder.requestedPrice]
-        : []
-      : isMatched && recentOrder.side === "short"
-        ? recentOrder.fillPrices
-        : []
-    : [];
-  const highlightAsks = recentOrder
-    ? isWaiting
-      ? recentOrder.side === "short" && recentOrder.requestedPrice !== null
-        ? [recentOrder.requestedPrice]
-        : []
-      : isMatched && recentOrder.side === "long"
-        ? recentOrder.fillPrices
-        : []
-    : [];
-  const visibleHighlight =
-    bidTotals.some((level) => hasExactPrice(highlightBids, level.price)) ||
-    askTotals.some((level) => hasExactPrice(highlightAsks, level.price));
+  const waiting = recentOrder?.status === "open";
+  const matched = recentOrder?.status === "filled" || recentOrder?.status === "partially_filled";
+  const highlightBids = !recentOrder ? [] : waiting && recentOrder.side === "long" && recentOrder.requestedPrice !== null
+    ? [recentOrder.requestedPrice]
+    : matched && recentOrder.side === "short" ? recentOrder.fillPrices : [];
+  const highlightAsks = !recentOrder ? [] : waiting && recentOrder.side === "short" && recentOrder.requestedPrice !== null
+    ? [recentOrder.requestedPrice]
+    : matched && recentOrder.side === "long" ? recentOrder.fillPrices : [];
 
   return (
-    <section className="panel order-book-panel">
-      <div className="panel-title">
-        <span className="step-badge">2</span>
-        <span>Order book</span>
-        <code>{displaySymbol}</code>
+    <section className="card order-book-panel" aria-labelledby="order-book-heading">
+      <div className="card-head">
+        <b id="order-book-heading">{displaySymbol} Order Book</b>
+        <small className="right">Mark {markPrice?.toFixed(1) ?? "--"} · Spread {spread}</small>
       </div>
 
-      <p className="panel-help">
-        Buy orders are on the left. Sell orders are on the right. Your latest order glows.
-      </p>
-
-      {recentOrder && (
-        <div className={`latest-order ${recentOrder.side} ${recentOrder.status}`} role="status">
-          <span className="latest-order-label">Your latest order</span>
-          <strong>{getOrderExplanation(recentOrder, displaySymbol)}</strong>
-          {!visibleHighlight && recentOrder.status !== "cancelled" && (
-            <span className="latest-order-detail">
-              This price has already moved out of the live book, so the glowing marker records it here.
-            </span>
-          )}
-        </div>
-      )}
-
-      <div className="market-strip">
-        <div>
-          <span>Current price</span>
-          <strong>{midPrice}</strong>
-        </div>
-        <div>
-          <span>Difference</span>
-          <strong>{spread}</strong>
-        </div>
-        <div>
-          <span>Funding rate</span>
-          <strong className="green">+0.0100%</strong>
-        </div>
-        <div>
-          <span>Mark price</span>
-          <strong>{markPrice !== null ? markPrice.toFixed(1) : "--"}</strong>
-        </div>
+      <div className="books">
+        <BookTable levels={askTotals} side="asks" highlightPrices={highlightAsks} />
+        <BookTable levels={bidTotals} side="bids" highlightPrices={highlightBids} />
       </div>
 
-      <div className="book-sides">
-        <table className="book-table">
-          <caption>Buy orders waiting</caption>
-          <thead>
-            <tr>
-              <th>Amount</th>
-              <th>Price</th>
-              <th>Total</th>
-            </tr>
-          </thead>
-          <tbody>
-            {bidTotals.map((bid) => (
-              <tr
-                key={bid.price}
-                className={`bid-row ${hasExactPrice(highlightBids, bid.price) ? "order-glow" : ""}`}
-              >
-                <td>{bid.qty.toFixed(3)}</td>
-                <td>{bid.price.toFixed(1)}</td>
-                <td>{bid.total.toFixed(3)}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-
-        <table className="book-table">
-          <caption>Sell orders waiting</caption>
-          <thead>
-            <tr>
-              <th>Amount</th>
-              <th>Price</th>
-              <th>Total</th>
-            </tr>
-          </thead>
-          <tbody>
-            {askTotals.map((ask) => (
-              <tr
-                key={ask.price}
-                className={`ask-row ${hasExactPrice(highlightAsks, ask.price) ? "order-glow" : ""}`}
-              >
-                <td>{ask.qty.toFixed(3)}</td>
-                <td>{ask.price.toFixed(1)}</td>
-                <td>{ask.total.toFixed(3)}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+      <div className="spread-row">
+        <span>Best Ask <b className="ask-value">{askTotals.at(-1)?.price.toFixed(1) ?? "--"}</b></span>
+        <span>Mid <b>{midPrice}</b></span>
+        <span>Best Bid <b className="bid-value">{bidTotals[0]?.price.toFixed(1) ?? "--"}</b></span>
       </div>
+
+      {recentOrder && <p className={`latest-order ${recentOrder.status}`} role="status">{latestOrderText(recentOrder)}</p>}
     </section>
   );
 }
