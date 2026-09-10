@@ -3,7 +3,9 @@ export type EngineCommandType =
   | "get_depth"
   | "get_user_balance"
   | "get_order"
-  | "cancel_order";
+  | "cancel_order"
+  | "get_open_orders"
+  | "get_mark_price";
 
 export interface EngineRequest {
   correlationId: string;

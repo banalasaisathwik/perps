@@ -6,7 +6,8 @@ export async function createOrder(req: Request, res: Response) {
   const vaidatePayload = createOrderSchema.safeParse(req.body);
 
   if (!vaidatePayload.success) {
-    throw new Error("failed at structure parsing");
+    res.status(400).json({ error: "Invalid order payload" });
+    return;
   }
 
   const { type, side, symbol, qty, leverage } = vaidatePayload.data;
@@ -32,7 +33,7 @@ export async function createOrder(req: Request, res: Response) {
   if (engineResponse.ok) {
     res.send(engineResponse.data);
   } else {
-    throw new Error(engineResponse.error);
+    res.status(400).json({ error: engineResponse.error ?? "Order rejected" });
   }
 }
 
@@ -93,6 +94,16 @@ export async function getUserBalances(req: Request, res: Response) {
   } else {
     throw new Error(engineResponse.error);
   }
+}
+
+export async function getOpenOrders(req: Request, res: Response) {
+  const userId = req.userId;
+  if (!userId) throw new Error("Missing authenticated user");
+
+  const symbol = typeof req.query.symbol === "string" ? req.query.symbol : undefined;
+  const engineResponse = await sendToEngine("get_open_orders", { userId, symbol });
+  if (engineResponse.ok) res.send(engineResponse.data);
+  else throw new Error(engineResponse.error);
 }
 
 export async function cancelOrder(req: Request, res: Response) {

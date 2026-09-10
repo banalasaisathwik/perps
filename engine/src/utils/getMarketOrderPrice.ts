@@ -1,7 +1,5 @@
 import { ORDERBOOKS } from "../store/memory";
 
-const SLIPPAGE_PERCENT = 5;
-
 export function getMarketOrderPrice(
   symbol: string,
   side: "long" | "short",
@@ -18,7 +16,7 @@ export function getMarketOrderPrice(
     const keys = [...book.asks.keys()].map(Number);
     const bestAsk = Math.min(...keys);
 
-    return bestAsk * (1 + SLIPPAGE_PERCENT / 100);
+    return bestAsk;
   }
 
   if (!book.bids || book.bids.size === 0) return null;
@@ -26,5 +24,5 @@ export function getMarketOrderPrice(
   const bidKeys = [...book.bids.keys()].map(Number);
   const bestBid = Math.max(...bidKeys);
 
-  return bestBid * (1 - SLIPPAGE_PERCENT / 100);
+  return bestBid;
 }

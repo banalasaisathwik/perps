@@ -23,16 +23,37 @@ export type RecentOrder = {
   fillPrices: number[];
 };
 
+export type Position = {
+  orderId: string;
+  symbol: string;
+  side: Side;
+  qty: number;
+  margin: number;
+  leverage: number;
+  liquidationPrice: number;
+  averagePrice: number;
+};
+
+export type OpenOrder = {
+  orderId: string;
+  symbol: string;
+  side: Side;
+  type: OrderType;
+  price: number | null;
+  qty: number;
+  filledQty: number;
+  status: "open" | "partially_filled";
+  createdAt: number;
+};
+
 export type ArchitectureNode =
   | "client"
   | "backend"
   | "redis"
-  | "engine"
-  | "binance"
-  | "mark-price";
+  | "engine";
 
 export type ArchitectureActivity = {
-  kind: "idle" | "manual-request" | "manual-response" | "book-update" | "mark-price";
+  kind: "idle" | "manual-request" | "manual-response" | "book-update";
   node: ArchitectureNode | null;
 };
 export type ConnectionStatus = "checking" | "connected" | "offline";

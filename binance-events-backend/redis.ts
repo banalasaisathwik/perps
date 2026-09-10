@@ -1,7 +1,9 @@
 import { createClient } from "redis"
 
 
-const binanceEventClient = createClient({url : process.env.REDIS_URL}).on("error",()=> console.log(""))
+const binanceEventClient = createClient({url : process.env.REDIS_URL}).on("error", (error) =>
+  console.error("Binance mark-price Redis publisher error", error.message),
+)
 
 const markPriceStream = process.env.REDIS_STREAM_MARK_PRICE ?? "perps:market:mark-price"
 

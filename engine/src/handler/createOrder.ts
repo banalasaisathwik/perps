@@ -3,6 +3,7 @@ import { matchLimitLong } from "../matching/matchLimitLong";
 import { matchLimitShort } from "../matching/matchLimitShort";
 import { ORDERS, type OrderRecord } from "../store/memory";
 import { getMarketOrderPrice } from "../utils/getMarketOrderPrice";
+import { releaseOrderReservation, reserveLimitOrderMargin } from "../utils/marginReservation";
 import { createOrderPayload } from "../zodValidations/validations";
 
 export const createOrder = (message: OrderRequest) => {
@@ -39,20 +40,27 @@ export const createOrder = (message: OrderRequest) => {
     filledQty: 0,
     status: "open",
     fills: [],
+    reservedMargin: 0,
     createdAt: Date.now(),
   };
 
-  ORDERS.set(order.orderId, order);
   if(type === "market" && finalPrice === null){
     order.status = "cancelled"
+    ORDERS.set(order.orderId, order);
     return order
   }
+  reserveLimitOrderMargin(order);
+  ORDERS.set(order.orderId, order);
   let processedOrder: OrderRecord;
 
   if (order.side === "long") {
     processedOrder = matchLimitLong(order);
   } else {
     processedOrder = matchLimitShort(order);
+  }
+
+  if (processedOrder.status === "filled" || processedOrder.status === "cancelled") {
+    releaseOrderReservation(processedOrder);
   }
 
   return processedOrder;

@@ -32,6 +32,12 @@ export function matchLimitShort(order: OrderRecord): OrderRecord {
       break
     }
 
+    // A sell limit can only fill when a buyer accepts the seller's price.
+    // Otherwise it must remain visible on the ask side of the order book.
+    if (order.type === "limit" && firstPrice < order.price!) {
+      break
+    }
+
     const fulfilledRestingOrderId : string[] = []
 
     for(const restingOrder of firstOrders){

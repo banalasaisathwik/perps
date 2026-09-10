@@ -9,12 +9,12 @@ import {
   waitForEngineResponse,
 } from "../store/pendingResolve";
 
-const publisher = createClient({ url: process.env.REDIS_URL }).on("error", () =>
-  console.log("publisher redis error"),
+const publisher = createClient({ url: process.env.REDIS_URL }).on("error", (error) =>
+  console.error("publisher redis error", error.message),
 );
 const subscriber = createClient({ url: process.env.REDIS_URL }).on(
   "error",
-  () => console.log("subscriber redis error"),
+  (error) => console.error("subscriber redis error", error.message),
 );
 export type RedisClient = typeof subscriber;
 
@@ -32,7 +32,8 @@ export async function sendToEngine(
   payload: Record<string, unknown>,
 ): Promise<EngineResponse> {
   const correlationId = crypto.randomUUID();
-  const responsePromise = waitForEngineResponse(correlationId, 300000);
+  const timeoutMs = Number(process.env.ENGINE_TIMEOUT_MS ?? 30000);
+  const responsePromise = waitForEngineResponse(correlationId, timeoutMs);
 
   const message: EngineRequest = {
     correlationId,
@@ -56,7 +57,10 @@ type RedisStreamReadResponse = Array<{
 
 export async function listenForEngineResponse() {
   const streamName = engineResponseStream;
-  let lastId = "$";
+  // Replay retained responses once on startup. Unknown correlation IDs are
+  // ignored, while this avoids the "$" startup race where an engine could
+  // answer a just-published command before the listener issued its first read.
+  let lastId = "0-0";
 
   for (;;) {
     const response = (await subscriber.xRead(

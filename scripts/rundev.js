@@ -28,6 +28,7 @@ async function findFreePort(startPort) {
 const services = [
   { name: 'engine', cmd: 'bun', args: ['--watch', 'src/index.ts'], cwd: path.resolve(__dirname, '..', 'engine') },
   { name: 'backend', cmd: 'bun', args: ['--watch', 'src/index.ts'], cwd: path.resolve(__dirname, '..', 'backend') },
+  { name: 'market-data', cmd: 'bun', args: ['--watch', 'index.ts'], cwd: path.resolve(__dirname, '..', 'binance-events-backend') },
   { name: 'frontend', cmd: 'bun', args: ['run', 'dev'], cwd: path.resolve(__dirname, '..', 'frontend') },
 ];
 
@@ -60,6 +61,7 @@ function loadEnvFile(filePath) {
 // load common .env files
 loadEnvFile(path.resolve(__dirname, '..', 'backend', '.env'));
 loadEnvFile(path.resolve(__dirname, '..', 'engine', '.env'));
+loadEnvFile(path.resolve(__dirname, '..', 'binance-events-backend', '.env'));
 loadEnvFile(path.resolve(__dirname, '..', 'frontend', '.env'));
 
 const requestedPort = Number(process.env.PORT ?? 3000);

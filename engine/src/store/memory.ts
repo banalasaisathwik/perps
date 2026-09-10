@@ -31,6 +31,7 @@ export interface OrderRecord {
   filledQty: number;
   status: OrderStatus;
   fills: Fill[];
+  reservedMargin: number;
   createdAt: number;
 }
 
@@ -86,3 +87,4 @@ export const ORDERBOOKS = new Map<string, OrderBook>();
 export const ORDERS = new Map<string, OrderRecord>();
 export const FILLS: Fill[] = [];
 export const POSITIONS = new Map<string, Postion[]>();
+export const MARK_PRICES = new Map<string, number>();

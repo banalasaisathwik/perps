@@ -6,6 +6,9 @@ import { getUserBalances } from "./handler/getUserBalances";
 import { getDepth } from "./handler/getDepth";
 import { getOrder } from "./handler/getOrder";
 import { cancelOrder } from "./handler/cancelOrder";
+import { getOpenOrders } from "./handler/getOpenOrders";
+import { getMarkPrice } from "./handler/getMarkPrice";
+import { MARK_PRICES } from "./store/memory";
 import { connectOrderBookPublisher, publishOrderBookSnapshot } from "./redis/orderBookPublisher";
 
 export type EngineCommandType =
@@ -13,7 +16,9 @@ export type EngineCommandType =
   | "get_depth"
   | "get_user_balance"
   | "get_order"
-  | "cancel_order";
+  | "cancel_order"
+  | "get_open_orders"
+  | "get_mark_price";
 
 export interface OrderRequest {
   correlationId: string;
@@ -76,6 +81,10 @@ switch (message.type) {
   case "cancel_order":
     result = cancelOrder(message)
     break
+  case "get_open_orders":
+    return getOpenOrders(message)
+  case "get_mark_price":
+    return getMarkPrice(message)
   default:
     throw new Error("unknown engine command");
 }
@@ -145,6 +154,7 @@ for (;;) {
 
       if (message.type === "mark_price") {
         try {
+          MARK_PRICES.set(message.symbol, message.latestPrice);
           liquidation(message);
         } catch (error) {
           console.error("Failed mark price execution", error);

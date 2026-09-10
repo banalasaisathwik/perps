@@ -1,24 +1,36 @@
 import { sendToEngine } from "../redis/engine-client";
 
-// Must match binance-events-backend/index.ts's mark-price symbol and frontend/src/data/orderBookSeed.ts's SYMBOL.
-const SYMBOL = process.env.ORDER_BOT_SYMBOL ?? "BTCUSDC";
+// Must match the market-data service and frontend's canonical traded symbol.
+const SYMBOL = process.env.ORDER_BOT_SYMBOL ?? "BTCUSDT";
+const FALLBACK_REFERENCE_PRICE = Number(process.env.ORDER_BOT_REFERENCE_PRICE ?? 67000);
 
 function randInt(min: number, max: number) {
   return Math.floor(Math.random() * (max - min + 1)) + min;
 }
 
 let botInterval: NodeJS.Timeout | null = null;
+let nextBotSide: "long" | "short" = "long";
 
 export function startDummyOrderBot() {
   if (botInterval) return { started: false, reason: "already_running" };
 
   console.log("Starting dummy order bot for", SYMBOL);
 
-  botInterval = setInterval(async () => {
+  const submitQuote = async () => {
     try {
-      const side = Math.random() > 0.5 ? "long" : "short";
+      // Alternating sides keeps both book halves supplied. Quotes are placed
+      // outside the current mark so this single demo account never trades
+      // against itself.
+      const side = nextBotSide;
+      nextBotSide = nextBotSide === "long" ? "short" : "long";
       const qty = Number((Math.random() * 0.1 + 0.01).toFixed(4));
-      const price = Number((randInt(10000, 11000) + Math.random()).toFixed(2));
+      const markResponse = await sendToEngine("get_mark_price", { symbol: SYMBOL });
+      const markPrice = markResponse.ok
+        && typeof (markResponse.data as { markPrice?: unknown } | undefined)?.markPrice === "number"
+        ? (markResponse.data as { markPrice: number }).markPrice
+        : FALLBACK_REFERENCE_PRICE;
+      const offset = randInt(5, 45) + Math.random();
+      const price = Number((side === "long" ? markPrice - offset : markPrice + offset).toFixed(2));
 
       const msg = {
         userId: "bot",
@@ -32,9 +44,12 @@ export function startDummyOrderBot() {
 
       await sendToEngine("create_order", msg as any);
     } catch (err) {
-      // ignore
+      console.error("dummy order bot quote failed", err);
     }
-  }, Number(process.env.ORDER_BOT_INTERVAL_MS ?? 2000));
+  };
+
+  void submitQuote();
+  botInterval = setInterval(() => void submitQuote(), Number(process.env.ORDER_BOT_INTERVAL_MS ?? 2000));
 
   return { started: true };
 }

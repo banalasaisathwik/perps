@@ -6,7 +6,7 @@ import {
   type RestingOrder,
 } from "../store/memory";
 
-import { processUserTrade } from "./processUserTrade";
+import { canProcessUserTrade, processUserTrade } from "./processUserTrade";
 
 export function createFill(
   incomingOrder: OrderRecord,
@@ -22,6 +22,15 @@ export function createFill(
 
   const buyOrder = incomingOrder.side === "long" ? incomingOrder : restingOrderRecord
   const sellOrder = incomingOrder.side === "short" ? incomingOrder : restingOrderRecord
+
+  if (buyOrder.userId === sellOrder.userId) {
+    throw new Error("self-trade is not supported");
+  }
+
+  // Check both accounts before changing either account's position or margin.
+  if (!canProcessUserTrade(buyOrder, qty, price) || !canProcessUserTrade(sellOrder, qty, price)) {
+    throw new Error("balance not sufficient");
+  }
 
   processUserTrade(buyOrder,qty,price)
   processUserTrade(sellOrder,qty,price)

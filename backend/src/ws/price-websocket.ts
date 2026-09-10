@@ -11,13 +11,20 @@ type ClientSubs = Map<WebSocket, Set<string>>;
 export function attachPriceWebSocket(server: HttpServer) {
   const wss = new WebSocketServer({ server, path: "/ws" });
 
-  const client = createClient({ url: process.env.REDIS_URL }).on("error", (e) =>
+  // Blocking XREAD calls need independent Redis connections. Sharing one
+  // client meant an idle order-book read could block mark-price delivery.
+  const orderBookClient = createClient({ url: process.env.REDIS_URL }).on("error", (e) =>
     console.error("orderbook redis subscriber error", e),
+  );
+  const markPriceClient = createClient({ url: process.env.REDIS_URL }).on("error", (e) =>
+    console.error("mark-price redis subscriber error", e),
   );
 
   const clients: ClientSubs = new Map();
 
-  void client.connect();
+  void Promise.all([orderBookClient.connect(), markPriceClient.connect()]).catch((error) => {
+    console.error("websocket Redis subscribers failed to connect", error);
+  });
 
   wss.on("connection", (ws) => {
     clients.set(ws, new Set());
@@ -57,7 +64,7 @@ export function attachPriceWebSocket(server: HttpServer) {
 
     for (;;) {
       try {
-        const resp = (await client.xRead(
+        const resp = (await orderBookClient.xRead(
           [{ key: ORDERBOOK_STREAM, id: lastId }],
           { BLOCK: 2000, COUNT: 10 },
         )) as unknown as Array<{ name: string; messages: Array<{ id: string; message: Record<string, string> }> }>;
@@ -103,7 +110,7 @@ export function attachPriceWebSocket(server: HttpServer) {
 
     for (;;) {
       try {
-        const resp = (await client.xRead(
+        const resp = (await markPriceClient.xRead(
           [{ key: MARK_PRICE_STREAM, id: lastId }],
           { BLOCK: 2000, COUNT: 10 },
         )) as unknown as Array<{ name: string; messages: Array<{ id: string; message: Record<string, string> }> }>;

@@ -30,6 +30,11 @@ export const getUserBalancesPayload = z.object({
     userId : z.string()
 })
 
+export const getOpenOrdersPayload = z.object({
+    userId: z.string(),
+    symbol: z.string().trim().min(1).optional(),
+})
+
 export const cancelOrderPayload = z.object({
     userId : z.string(),
     orderId : z.string()

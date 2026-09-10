@@ -36,7 +36,7 @@ export function matchLimitLong(order: OrderRecord): OrderRecord {
       break;
     }
 
-    if (bestAskPrice > order.price!) {
+    if (order.type === "limit" && bestAskPrice > order.price!) {
       break;
     }
 

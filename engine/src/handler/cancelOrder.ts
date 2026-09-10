@@ -1,6 +1,6 @@
 import type { OrderRequest } from "..";
 import { ORDERBOOKS, ORDERS } from "../store/memory";
-import { unlockMargin } from "../utils/unlockMargin";
+import { releaseOrderReservation } from "../utils/marginReservation";
 import { cancelOrderPayload } from "../zodValidations/validations";
 
 export function cancelOrder(message : OrderRequest){
@@ -29,8 +29,7 @@ export function cancelOrder(message : OrderRequest){
         return order
     }
 
-    const remainingMargin = (restingOrder.remainQty * restingOrder.price) / order.leverage
-    unlockMargin(userId,remainingMargin)
+    releaseOrderReservation(order)
     order.status = "cancelled"
 
     const newOrdersAtPrice = ordersAtPrice?.filter((o)=>o.orderId !== order.orderId) ?? []

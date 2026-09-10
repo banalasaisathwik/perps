@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { asyncHandler } from "../utlis/asyncHandler";
-import { cancelOrder, createOrder, getDepth, getOrder, getUserBalances } from "../controllers/engine-controller";
+import { cancelOrder, createOrder, getDepth, getOpenOrders, getOrder, getUserBalances } from "../controllers/engine-controller";
 import { requireAuth } from "../middleware/auth";
 
 export const engineRouter = Router()
@@ -10,3 +10,4 @@ engineRouter.get("/order/:orderId",requireAuth,asyncHandler(getOrder))
 engineRouter.delete("/order/:orderId",requireAuth,asyncHandler(cancelOrder))
 engineRouter.get("/depth/:symbol",asyncHandler(getDepth))
 engineRouter.get("/balances",requireAuth,asyncHandler(getUserBalances))
+engineRouter.get("/open-orders",requireAuth,asyncHandler(getOpenOrders))
