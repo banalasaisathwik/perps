@@ -14,7 +14,16 @@ void listenForEngineResponse().catch((error) => {
 
 const app = express()
 
-app.use(cors())
+// CORS_ORIGIN is a comma-separated allowlist (e.g. your Vercel domain(s)).
+// Left unset, all origins are reflected - matches prior behavior for local dev.
+const allowedOrigins = (process.env.CORS_ORIGIN ?? "")
+    .split(",")
+    .map((origin) => origin.trim())
+    .filter(Boolean)
+
+app.use(cors({
+    origin: allowedOrigins.length > 0 ? allowedOrigins : true,
+}))
 app.use(express.json())
 
 app.get("/health", (_req: Request, res: Response) => {

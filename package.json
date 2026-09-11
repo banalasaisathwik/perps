@@ -3,6 +3,10 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "node ./scripts/rundev.js"
+    "dev": "node ./scripts/rundev.js",
+    "start": "concurrently -k -n backend,engine,market-data -c blue,green,yellow \"bun --cwd=backend run start\" \"bun --cwd=engine run start\" \"bun --cwd=binance-events-backend run start\""
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2"
   }
 }

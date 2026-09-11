@@ -1,0 +1,7 @@
+frontend
+**/node_modules
+**/.env
+**/.env.*.local
+**/dist
+**/*.tsbuildinfo
+.git
