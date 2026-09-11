@@ -37,6 +37,7 @@ export function canFundOpening(
   fillPrice: number,
   availableAfterClose: number,
 ): boolean {
+  if (openingQuantity <= 0) return true;
   const actualMargin = (openingQuantity * fillPrice) / order.leverage;
   const reserved = reservationForOpeningFill(order, openingQuantity);
   return availableAfterClose >= Math.max(0, actualMargin - reserved);
@@ -47,6 +48,7 @@ export function settleReservedOpeningMargin(
   openingQuantity: number,
   fillPrice: number,
 ): number {
+  if (openingQuantity <= 0) return 0;
   const actualMargin = (openingQuantity * fillPrice) / order.leverage;
   const reserved = reservationForOpeningFill(order, openingQuantity);
   order.reservedMargin -= reserved;

@@ -57,10 +57,16 @@ type RedisStreamReadResponse = Array<{
 
 export async function listenForEngineResponse() {
   const streamName = engineResponseStream;
-  // Replay retained responses once on startup. Unknown correlation IDs are
-  // ignored, while this avoids the "$" startup race where an engine could
-  // answer a just-published command before the listener issued its first read.
-  let lastId = "0-0";
+  // Start from "$" (only responses published from here on). This loop is
+  // already running before index.ts calls app.listen(), so no request can
+  // reach sendToEngine() before this first xRead is issued - there is no
+  // startup race to guard against. Replaying from "0-0" instead would re-read
+  // every response ever published on every restart; with no stream trimming
+  // in place that backlog only grows, and once replaying it takes longer than
+  // ENGINE_TIMEOUT_MS, every request times out even though the engine
+  // answered almost instantly (the real response is just stuck behind
+  // thousands of old ones the listener insists on re-reading first).
+  let lastId = "$";
 
   for (;;) {
     const response = (await subscriber.xRead(

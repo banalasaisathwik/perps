@@ -1,14 +1,16 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { SYMBOL } from "../data/orderBookSeed";
-import type { ArchitectureActivity, ArchitectureNode, Level, OpenOrder, OrderType, Position, RecentOrder, Side } from "../types/dashboard";
+import type { ArchitectureActivity, ArchitectureNode, Balance, Level, OpenOrder, OrderType, Position, RecentOrder, Side } from "../types/dashboard";
 import { addTotals, getSpread } from "../utils/orderBook";
+import { effectiveLeverage } from "../utils/leverage";
+import { parseNumericInput } from "../utils/parseNumericInput";
 
 type AuthenticationStatus = "idle" | "pending" | "ready" | "error";
 type SubmissionStatus = "idle" | "pending" | "success" | "error";
 type DepthPayload = { asks?: Level[]; bids?: Level[] };
 type OrderResponse = { filledQty?: number; fills?: Array<{ price?: number }>; side?: Side; status?: RecentOrder["status"] };
 type WebSocketMessage = DepthPayload & { data?: DepthPayload; price?: number; type?: string };
-type AccountPayload = { positions?: Position[] };
+type AccountPayload = { balance?: Balance; positions?: Position[] };
 
 const API_BASE = (import.meta.env.VITE_API_URL as string) ?? "http://localhost:3000";
 const IDLE_ACTIVITY: ArchitectureActivity = { kind: "idle", node: null };
@@ -38,14 +40,59 @@ export function useDashboardRuntime() {
   const [recentOrder, setRecentOrder] = useState<RecentOrder | null>(null);
   const [markPrice, setMarkPrice] = useState<number | null>(null);
   const [positions, setPositions] = useState<Position[]>([]);
+  const [balance, setBalance] = useState<Balance | null>(null);
   const [openOrders, setOpenOrders] = useState<OpenOrder[]>([]);
   const animationIdRef = useRef(0);
   const refreshInFlight = useRef(false);
+
+  useEffect(() => {
+    // Order creation and balance both require auth. Reuse a token saved from
+    // a previous visit, otherwise provision a throwaway guest account so the
+    // dashboard is usable without a manual sign-up.
+    if (token && username) return;
+    setAuthStatus("pending");
+    const guestUsername = `guest_${Math.random().toString(36).slice(2, 10)}`;
+    const guestPassword = crypto.randomUUID();
+    fetch(`${API_BASE}/signup`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username: guestUsername, password: guestPassword }),
+    })
+      .then(async (response) => {
+        const data = await response.json().catch(() => null) as { error?: string; token?: string; username?: string } | null;
+        if (!response.ok || !data?.token || !data.username) throw new Error(responseError(data, response));
+        localStorage.setItem("perps_token", data.token);
+        localStorage.setItem("perps_username", data.username);
+        setToken(data.token);
+        setUsername(data.username);
+        setAuthStatus("ready");
+      })
+      .catch((error) => {
+        setAuthError(error instanceof Error ? error.message : "Unable to provision a guest session.");
+        setAuthStatus("error");
+      });
+  }, []);
 
   const bidTotals = useMemo(() => addTotals(bids.slice(0, 12)), [bids]);
   const askTotals = useMemo(() => addTotals(asks.slice(0, 12)).reverse(), [asks]);
   const spread = getSpread(bids, asks);
   const displayedMark = markPrice ?? (bids[0] && asks[0] ? (bids[0].price + asks[0].price) / 2 : null);
+  // Unrealized PnL must use the price a position would actually close at
+  // (best bid to sell a long, best ask to buy back a short), not the
+  // external mark price feed. The matching engine never fills at mark - it
+  // fills against resting book orders - so pricing unrealized PnL off mark
+  // let it diverge from realized PnL the instant a position was closed.
+  const bestBid = bids[0]?.price ?? null;
+  const bestAsk = asks[0]?.price ?? null;
+  const equity = useMemo(() => {
+    if (!balance) return null;
+    const unrealizedPnl = positions.reduce((total, position) => {
+      const exitPrice = (position.side === "long" ? bestBid : bestAsk) ?? displayedMark;
+      if (exitPrice === null) return total;
+      return total + (position.side === "long" ? exitPrice - position.averagePrice : position.averagePrice - exitPrice) * position.qty;
+    }, 0);
+    return balance.available + balance.locked + unrealizedPnl;
+  }, [balance, bestAsk, bestBid, displayedMark, positions]);
 
   const animateArchitecture = useCallback(async (kind: ArchitectureActivity["kind"], nodes: ArchitectureNode[]) => {
     const animationId = animationIdRef.current + 1;
@@ -70,6 +117,7 @@ export function useDashboardRuntime() {
       if (accountResponse.ok) {
         const account = await accountResponse.json() as AccountPayload;
         setPositions(Array.isArray(account.positions) ? account.positions : []);
+        setBalance(account.balance && typeof account.balance.available === "number" ? account.balance : null);
       }
       if (ordersResponse.ok) {
         const orders = await ordersResponse.json() as OpenOrder[];
@@ -164,7 +212,7 @@ export function useDashboardRuntime() {
   async function placeOrder(event: FormEvent) {
     event.preventDefault();
     if (authStatus !== "ready" || orderStatus === "pending") return;
-    const numericQty = Number(qty); const numericLeverage = Number(leverage); const numericPrice = Number(price);
+    const numericQty = parseNumericInput(qty); const numericLeverage = parseNumericInput(leverage); const numericPrice = parseNumericInput(price);
     if (!Number.isFinite(numericQty) || numericQty <= 0 || !Number.isFinite(numericLeverage) || numericLeverage <= 0 || (orderType === "limit" && (!Number.isFinite(numericPrice) || numericPrice <= 0))) {
       setOrderStatus("error"); setOrderMessage("Enter positive price, quantity, and leverage values."); return;
     }
@@ -174,7 +222,8 @@ export function useDashboardRuntime() {
 
   async function closePosition(position: Position) {
     if (authStatus !== "ready") return;
-    await submitOrder({ type: "market", side: position.side === "long" ? "short" : "long", symbol: position.symbol, qty: position.qty, leverage: position.leverage }, "market", null);
+    const closeLeverage = Math.min(100, Math.max(1, Math.round(effectiveLeverage(position) ?? position.leverage)));
+    await submitOrder({ type: "market", side: position.side === "long" ? "short" : "long", symbol: position.symbol, qty: position.qty, leverage: closeLeverage }, "market", null);
   }
 
   async function cancelOpenOrder(orderId: string) {
@@ -196,5 +245,5 @@ export function useDashboardRuntime() {
     } catch (error) { setBotMessage(error instanceof Error ? error.message : "Unable to update bot state."); }
   }
 
-  return { architectureActivity, askTotals, authError, authenticate, authStatus, bidTotals, botMessage, botRunning, cancelOpenOrder, closePosition, displayedMark, leverage, openOrders, orderMessage, orderStatus, orderType, placeOrder, positions, price, qty, recentOrder, setLeverage, setOrderType, setPrice, setQty, setSide, side, spread, toggleBot, username };
+  return { architectureActivity, askTotals, authError, authenticate, authStatus, balance, bestAsk, bestBid, bidTotals, botMessage, botRunning, cancelOpenOrder, closePosition, displayedMark, equity, leverage, markPrice, openOrders, orderMessage, orderStatus, orderType, placeOrder, positions, price, qty, recentOrder, setLeverage, setOrderType, setPrice, setQty, setSide, side, spread, toggleBot, username };
 }

@@ -3,6 +3,11 @@ export type Level = {
   qty: number;
 };
 
+export type Balance = {
+  available: number;
+  locked: number;
+};
+
 export type LevelWithTotal = Level & {
   total: number;
 };
