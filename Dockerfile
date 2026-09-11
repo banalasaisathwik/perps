@@ -10,6 +10,10 @@ COPY backend/package.json backend/bun.lock* ./backend/
 COPY engine/package.json engine/bun.lock* ./engine/
 COPY binance-events-backend/package.json binance-events-backend/bun.lock* ./binance-events-backend/
 
+# backend's postinstall runs `prisma generate`, which needs the schema file
+# present before `bun install` runs below.
+COPY backend/prisma ./backend/prisma
+
 RUN bun install --frozen-lockfile \
     && cd backend && bun install --frozen-lockfile \
     && cd ../engine && bun install --frozen-lockfile \
