@@ -9,7 +9,7 @@ describe("loadRedisConfig", () => {
   test("uses bounded streams and capped reconnect delays by default", () => {
     const config = loadRedisConfig({ REDIS_URL: "redis://localhost:6379" });
 
-    expect(config.streamAddOptions.TRIM).toEqual({
+    expect(config.eventStreamAddOptions.TRIM).toEqual({
       strategy: "MAXLEN",
       strategyModifier: "=",
       threshold: 1_000,
@@ -28,7 +28,7 @@ describe("loadRedisConfig", () => {
       REDIS_STARTUP_TIMEOUT_MS: "3",
     });
 
-    expect(config.streamAddOptions.TRIM.threshold).toBe(25);
+    expect(config.eventStreamAddOptions.TRIM.threshold).toBe(25);
     expect(config.clientOptions.socket.connectTimeout).toBe(1_200);
     expect(config.startupTimeout).toBe(3);
 
