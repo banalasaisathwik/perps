@@ -5,8 +5,13 @@ export interface TokenPayload {
   userId: string;
 }
 
+const jwtSecret = process.env.JWT_SECRET;
+if (!jwtSecret) {
+  throw new Error("JWT_SECRET environment variable is required");
+}
+
 export function createToken(payload: TokenPayload): string {
-  return jwt.sign(payload, "secret", { expiresIn: "7d" });
+  return jwt.sign(payload, jwtSecret!, { expiresIn: "7d" });
 }
 
 export function requireAuth(req: Request, res: Response, next: NextFunction): void {
@@ -22,7 +27,7 @@ export function requireAuth(req: Request, res: Response, next: NextFunction): vo
   }
 
   try {
-    const payload = jwt.verify(token,"secret") as TokenPayload
+    const payload = jwt.verify(token,jwtSecret!) as TokenPayload
     const userId = payload.userId
     req.userId = userId
     next()
