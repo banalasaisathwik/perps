@@ -16,7 +16,9 @@ export async function sendToEngine(type: EngineCommandType, payload: Record<stri
 ): Promise<EngineResponse> {
 
   const correlationId = crypto.randomUUID()
-  const responsePromise = waitForEngineResponse(correlationId, 300000);
+  const responsePromise = waitForEngineResponse(correlationId, 15000);
+  // Avoid detached rejection if the LPUSH itself fails or takes too long.
+  void responsePromise.catch(() => undefined);
 
   const message: EngineRequest = {
     correlationId,
