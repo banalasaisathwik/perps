@@ -47,6 +47,8 @@ jobs:
         run: cd engine && bun install --frozen-lockfile
       - name: Test manual order matching
         run: cd engine && bun test src/matching/v1-manual.test.ts
+      - name: Bundle active V1 engine entry point
+        run: cd engine && bun build src/index.ts --target=bun --outdir /tmp/perps-v1-engine
       - name: Build trading frontend
         run: cd frontend && npm install --no-audit --no-fund && npm run build
       - name: Install backend dependencies and generate Prisma client
