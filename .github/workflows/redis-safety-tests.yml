@@ -24,3 +24,5 @@ jobs:
       - uses: oven-sh/setup-bun@v2
       - name: Run Redis configuration and request lifecycle unit tests
         run: bun test ./shared/redis-config.test.ts ./backend/src/store/pendingResolve.test.ts
+      - name: Build Render production Docker image
+        run: docker build --progress=plain -t perps-render-test .
