@@ -17,6 +17,29 @@ permissions:
 jobs:
   test-and-build:
     runs-on: ubuntu-latest
+    env:
+      REDIS_URL: redis://localhost:6379
+      DATABASE_URL: postgresql://perps:ci-demo@localhost:5432/perps
+      JWT_SECRET: integration-test-secret-not-for-production
+      PORT: "3000"
+    services:
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: perps
+          POSTGRES_PASSWORD: ci-demo
+          POSTGRES_DB: perps
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U perps -d perps"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
     steps:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2
@@ -33,3 +56,7 @@ jobs:
           cd backend
           bun install --frozen-lockfile
           bunx prisma generate
+      - name: Apply schema to disposable PostgreSQL
+        run: cd backend && bunx prisma migrate deploy
+      - name: Smoke-test V1 manual trading through the API
+        run: bash .github/scripts/v1-smoke.sh
