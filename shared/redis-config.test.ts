@@ -6,7 +6,7 @@ describe("loadRedisConfig", () => {
     expect(() => loadRedisConfig({})).toThrow("REDIS_URL is required");
   });
 
-  test("uses bounded streams and capped reconnect delays by default", () => {
+  test("uses bounded transient event streams and capped reconnect delays by default", () => {
     const config = loadRedisConfig({ REDIS_URL: "redis://localhost:6379" });
 
     expect(config.eventStreamAddOptions.TRIM).toEqual({
@@ -37,7 +37,7 @@ describe("loadRedisConfig", () => {
       REDIS_STREAM_MAX_LENGTH: "0",
       REDIS_CONNECT_TIMEOUT_MS: "invalid",
     });
-    expect(fallback.streamAddOptions.TRIM.threshold).toBe(1_000);
+    expect(fallback.eventStreamAddOptions.TRIM.threshold).toBe(1_000);
     expect(fallback.clientOptions.socket.connectTimeout).toBe(5_000);
   });
 
