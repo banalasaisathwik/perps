@@ -1,13 +1,20 @@
 import { createClient } from "redis"
+import { connectRedisClient, loadRedisConfig } from "../shared/redis-config"
 
 
-const binanceEventClient = createClient({url : process.env.REDIS_URL}).on("error", (error) =>
+const { clientOptions, startupTimeout, streamAddOptions } = loadRedisConfig()
+
+const binanceEventClient = createClient(clientOptions).on("error", (error) =>
   console.error("Binance mark-price Redis publisher error", error.message),
 )
 
 const markPriceStream = process.env.REDIS_STREAM_MARK_PRICE ?? "perps:market:mark-price"
 
-await binanceEventClient.connect()
+await connectRedisClient(
+  binanceEventClient,
+  "Redis mark-price publisher",
+  startupTimeout,
+)
 
 export async function pushToRedis(latestPrice: number, symbol: string) {
     const payload = {
@@ -15,6 +22,11 @@ export async function pushToRedis(latestPrice: number, symbol: string) {
         latestPrice,
         symbol,
     }
-    await binanceEventClient.xAdd(markPriceStream, "*", { data: JSON.stringify(payload) })
+    await binanceEventClient.xAdd(
+      markPriceStream,
+      "*",
+      { data: JSON.stringify(payload) },
+      streamAddOptions,
+    )
 
 }
