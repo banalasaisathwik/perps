@@ -65,11 +65,24 @@ const obj = MarkPrice.getInstance();
 
 // BTCUSDT is the source of truth for the traded symbol; must match SYMBOL in
 // frontend/src/data/orderBookSeed.ts and backend/src/dummy/order-bot.ts.
-setInterval(async () => {
+let publishInFlight = false;
+
+async function publishLatestPrice() {
+  if (publishInFlight) return;
+
   const latestPrice = obj.getPrice("BTCUSDT");
   if (latestPrice === undefined) {
     return;
   }
 
-  await pushToRedis(latestPrice, "BTCUSDT");
-}, 5000);
+  publishInFlight = true;
+  try {
+    await pushToRedis(latestPrice, "BTCUSDT");
+  } catch (error) {
+    console.error("Failed to publish Binance mark price", error);
+  } finally {
+    publishInFlight = false;
+  }
+}
+
+setInterval(() => void publishLatestPrice(), 5000);

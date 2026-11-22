@@ -2,6 +2,7 @@ import { createClient } from "redis";
 import { WebSocketServer, type WebSocket } from "ws";
 import { Server as HttpServer } from "http";
 import { sendToEngine } from "../redis/engine-client";
+import { loadRedisConfig } from "../../../shared/redis-config";
 
 const ORDERBOOK_STREAM = process.env.REDIS_STREAM_ORDERBOOK ?? "perps:events:orderbook";
 const MARK_PRICE_STREAM = process.env.REDIS_STREAM_MARK_PRICE ?? "perps:market:mark-price";
@@ -13,10 +14,11 @@ export function attachPriceWebSocket(server: HttpServer) {
 
   // Blocking XREAD calls need independent Redis connections. Sharing one
   // client meant an idle order-book read could block mark-price delivery.
-  const orderBookClient = createClient({ url: process.env.REDIS_URL }).on("error", (e) =>
+  const { clientOptions } = loadRedisConfig();
+  const orderBookClient = createClient(clientOptions).on("error", (e) =>
     console.error("orderbook redis subscriber error", e),
   );
-  const markPriceClient = createClient({ url: process.env.REDIS_URL }).on("error", (e) =>
+  const markPriceClient = createClient(clientOptions).on("error", (e) =>
     console.error("mark-price redis subscriber error", e),
   );
 

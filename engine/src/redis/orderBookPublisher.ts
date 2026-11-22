@@ -1,17 +1,27 @@
 import { createClient } from "redis";
 import { getOrderBookSnapshot } from "../utils/getOrderBookSnapshot";
+import {
+  connectRedisClient,
+  loadRedisConfig,
+} from "../../../shared/redis-config";
 
 const orderBookStream =
   process.env.REDIS_STREAM_ORDERBOOK ?? "perps:events:orderbook";
 
-const orderBookPublisher = createClient({ url: process.env.REDIS_URL }).on(
+const { clientOptions, startupTimeout, streamAddOptions } = loadRedisConfig();
+
+const orderBookPublisher = createClient(clientOptions).on(
   "error",
   () => console.log("orderbook publisher redis error"),
 );
 
 export async function connectOrderBookPublisher() {
   if (!orderBookPublisher.isOpen) {
-    await orderBookPublisher.connect();
+    await connectRedisClient(
+      orderBookPublisher,
+      "Redis order-book publisher",
+      startupTimeout,
+    );
   }
 }
 
@@ -24,5 +34,5 @@ export async function publishOrderBookSnapshot(symbol: string) {
       ...snapshot,
       ts: Date.now(),
     }),
-  });
+  }, streamAddOptions);
 }
