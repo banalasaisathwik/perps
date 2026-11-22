@@ -65,3 +65,4 @@ You can place market orders only when the opposite side of the book has liquidit
 - The UI's **Your orders** list tracks the 15 most recent order IDs in the local browser for each account, then looks them up through the authenticated V1 API. It is not a complete server-side order-history API.
 - Quotes are derived from actual resting orders, not a continuous Binance mark price. Without manually entered orders, the order book is empty by design.
 - The original queue is destructive on consume and has no restart replay or idempotency protection. Do not use this design for real-money trading.
+- Automatic liquidation is intentionally **disabled** in this minimal V1 demo. The historical liquidation path references missing modules and was not verified. You can inspect positions and their computed liquidation prices, but no liquidation is executed when a mark-price event arrives.
