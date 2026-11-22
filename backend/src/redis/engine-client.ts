@@ -14,7 +14,7 @@ import {
   loadRedisConfig,
 } from "../../../shared/redis-config";
 
-const { clientOptions, startupTimeout, streamAddOptions } = loadRedisConfig();
+const { clientOptions, startupTimeout } = loadRedisConfig();
 
 const publisher = createClient(clientOptions).on("error", (error) =>
   console.error("publisher redis error", error.message),
@@ -44,6 +44,9 @@ export async function sendToEngine(
   const correlationId = crypto.randomUUID();
   const timeoutMs = Number(process.env.ENGINE_TIMEOUT_MS ?? 30000);
   const responsePromise = waitForEngineResponse(correlationId, timeoutMs);
+  // Register a rejection handler immediately: Redis XADD might block longer
+  // than the response timeout, or fail after we create this promise.
+  void responsePromise.catch(() => undefined);
 
   const message: EngineRequest = {
     correlationId,
@@ -58,7 +61,6 @@ export async function sendToEngine(
       engineCommandStream,
       "*",
       { data: JSON.stringify(message) },
-      streamAddOptions,
     );
   } catch (error) {
     const publishError =
@@ -120,7 +122,16 @@ export async function listenForEngineResponse() {
             console.log(
               `[engine-rpc] response correlationId=${parsedResponse.correlationId} ok=${parsedResponse.ok}`,
             );
-            resolveEngineResponse(parsedResponse);
+            const ownedResponse = resolveEngineResponse(parsedResponse);
+            // Only the backend instance that owns the request removes its
+            // response. Other replicas may be reading this same stream.
+            if (ownedResponse) {
+              try {
+                await subscriber.xDel(streamName, messageId);
+              } catch (error) {
+                console.error("Failed to remove handled engine response", error);
+              }
+            }
           }
         } catch (error) {
           console.error("Invalid engine response or processing error", error);
