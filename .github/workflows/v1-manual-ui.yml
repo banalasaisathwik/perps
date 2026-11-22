@@ -1,0 +1,35 @@
+name: V1 manual UI and matching tests
+
+on:
+  push:
+    branches:
+      - feature/v1-manual-trading-ui
+  pull_request:
+    paths:
+      - "frontend/**"
+      - "engine/**"
+      - "backend/**"
+      - ".github/workflows/v1-manual-ui.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  test-and-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+      - name: Install matching engine dependencies
+        run: cd engine && bun install --frozen-lockfile
+      - name: Test manual order matching
+        run: cd engine && bun test src/matching/v1-manual.test.ts
+      - name: Build trading frontend
+        run: cd frontend && npm install --no-audit --no-fund && npm run build
+      - name: Install backend dependencies and generate Prisma client
+        env:
+          DATABASE_URL: postgresql://perps:ci-demo@localhost:5432/perps
+        run: |
+          cd backend
+          bun install --frozen-lockfile
+          bunx prisma generate
