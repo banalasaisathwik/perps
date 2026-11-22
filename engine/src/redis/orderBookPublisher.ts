@@ -8,7 +8,7 @@ import {
 const orderBookStream =
   process.env.REDIS_STREAM_ORDERBOOK ?? "perps:events:orderbook";
 
-const { clientOptions, startupTimeout, streamAddOptions } = loadRedisConfig();
+const { clientOptions, startupTimeout, eventStreamAddOptions } = loadRedisConfig();
 
 const orderBookPublisher = createClient(clientOptions).on(
   "error",
@@ -34,5 +34,5 @@ export async function publishOrderBookSnapshot(symbol: string) {
       ...snapshot,
       ts: Date.now(),
     }),
-  }, streamAddOptions);
+  }, eventStreamAddOptions);
 }
