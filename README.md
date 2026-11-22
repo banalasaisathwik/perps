@@ -15,7 +15,7 @@ Notes:
 - Redis Streams are transport, not durable storage. Only transient mark-price and
   order-book event streams are trimmed to `REDIS_STREAM_MAX_LENGTH` (default
   `1000`). Trading command and response streams are never length-trimmed:
-  successful engine responses trigger command cleanup, and the receiving API
+  published engine responses trigger command cleanup, and the receiving API
   instance removes its handled response. This avoids silently dropping orders
   when the engine is busy.
 - The current engine is in-memory and starts reading new commands from Redis's
