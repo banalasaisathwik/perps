@@ -43,7 +43,7 @@ export function loadRedisConfig(env: Environment = process.env) {
       },
     },
     startupTimeout,
-    streamAddOptions: {
+    eventStreamAddOptions: {
       TRIM: {
         strategy: "MAXLEN" as const,
         strategyModifier: "=" as const,
