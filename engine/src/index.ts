@@ -43,7 +43,7 @@ export interface EngineResponse {
   error?: string;
 }
 
-const { clientOptions, startupTimeout, streamAddOptions } = loadRedisConfig();
+const { clientOptions, startupTimeout } = loadRedisConfig();
 
 const brokerClient = createClient(clientOptions).on("error", (error) => {
   console.error("Redis broker client error", error);
@@ -69,7 +69,6 @@ async function sendResponse(responseQueue: string, response: EngineResponse): Pr
     responseQueue,
     "*",
     { data: JSON.stringify(response) },
-    streamAddOptions,
   );
 }
 
@@ -195,6 +194,18 @@ for (;;) {
           await sendResponse(message.responseQueue, engineResponse);
         } catch (error) {
           console.error("Failed to publish engine response", error);
+          // The command is retained for diagnosis; never discard it merely
+          // because the response could not be published.
+          continue;
+        }
+
+        // Command entries must not be MAXLEN-trimmed: an overloaded engine
+        // could otherwise silently drop unprocessed orders/cancellations.
+        // Remove the command only after its response was published.
+        try {
+          await brokerClient.xDel(engineCommandStream, entry.id);
+        } catch (error) {
+          console.error("Failed to remove processed engine command", error);
         }
       }
     }
