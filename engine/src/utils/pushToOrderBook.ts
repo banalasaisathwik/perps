@@ -30,11 +30,11 @@ export function pushToOrderBook(order: OrderRecord,pushTo : pushTo){
           createdAt: Date.now()
     }
 
-    const bids = symOrderbook?.bids
-    if(!bids?.has(price!)){
-        bids?.set(price!,[])
+    const bookSide = symOrderbook?.[pushTo]
+    if (!bookSide?.has(price!)) {
+        bookSide?.set(price!, [])
     }
 
-    bids?.get(price!)?.push(newRestingOrder)
+    bookSide?.get(price!)?.push(newRestingOrder)
     return
 }
