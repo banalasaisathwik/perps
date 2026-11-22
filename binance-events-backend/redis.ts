@@ -3,7 +3,7 @@ import { createClient } from "redis"
 
 const binanceEventClient = createClient({url : process.env.REDIS_URL}).on("error",()=> console.log(""))
 
-const engineQueue = "backend-engine-queue"
+const engineQueue = process.env.ENGINE_QUEUE ?? "backend-engine-queue"
 
 await binanceEventClient.connect()
 
