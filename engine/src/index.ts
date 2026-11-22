@@ -1,7 +1,6 @@
 import "dotenv/config";
 import { createClient } from "redis";
 import { createOrder } from "./handler/createOrder";
-import { liquidation } from "./handler/liquidation";
 import { getUserBalances } from "./handler/getUserBalances";
 import { getDepth } from "./handler/getDepth";
 import { getOrder } from "./handler/getOrder";
@@ -87,11 +86,9 @@ for (;;) {
   }
 
   if (message.type === "mark_price") {
-    try {
-      liquidation(message);
-    } catch (error) {
-      console.error("Failed  mark price", error);
-    }
+    // V1 manual matching intentionally does not execute automatic liquidation.
+    // The historical liquidation module imports deleted helpers and has not
+    // been validated. Ignore market-price events in this paper-trading demo.
     continue;
   }
 

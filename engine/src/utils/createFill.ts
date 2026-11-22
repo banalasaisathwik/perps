@@ -21,7 +21,10 @@ export function createFill(
   }
 
   const buyOrder = incomingOrder.side === "long" ? incomingOrder : restingOrderRecord
-  const sellOrder = incomingOrder.side === "short" ? restingOrderRecord : incomingOrder
+  // The incoming short is the seller; otherwise the resting ask is the seller.
+  // The previous expression incorrectly treated a matching buy as both sides,
+  // double-counting the incoming fill while leaving the resting sell unchanged.
+  const sellOrder = incomingOrder.side === "short" ? incomingOrder : restingOrderRecord
 
   processUserTrade(buyOrder,qty,price)
   processUserTrade(sellOrder,qty,price)
