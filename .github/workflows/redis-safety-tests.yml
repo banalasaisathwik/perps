@@ -1,0 +1,63 @@
+name: Redis safety unit tests
+
+on:
+  push:
+    branches:
+      - fix/render-redis-stream-safety-review
+  pull_request:
+    paths:
+      - "shared/**"
+      - "backend/src/redis/**"
+      - "backend/src/store/**"
+      - "engine/src/**"
+      - "binance-events-backend/**"
+      - ".github/workflows/redis-safety-tests.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+      - name: Run Redis configuration and request lifecycle unit tests
+        run: bun test ./shared/redis-config.test.ts ./backend/src/store/pendingResolve.test.ts
+      - name: Build Render production Docker image
+        run: docker build --progress=plain -t perps-render-test .
+      - name: Smoke test API and matching engine in Docker
+        run: |
+          set -euo pipefail
+          docker network create perps-ci-network
+          docker run -d --name perps-ci-redis --network perps-ci-network redis:7-alpine
+          docker run -d --name perps-ci-db --network perps-ci-network -e POSTGRES_USER=perps -e POSTGRES_PASSWORD=ci-test -e POSTGRES_DB=perps postgres:16-alpine
+          docker run -d --name perps-ci-app --network perps-ci-network -p 127.0.0.1:3000:3000 -e PORT=3000 -e REDIS_URL=redis://perps-ci-redis:6379 -e DATABASE_URL=postgresql://perps:ci-test@perps-ci-db:5432/perps -e JWT_SECRET=ci-not-production -e START_ORDER_BOT=false perps-render-test
+          trap 'docker logs perps-ci-app; docker rm -f perps-ci-app perps-ci-db perps-ci-redis >/dev/null 2>&1 || true' EXIT
+
+          healthy=0
+          for i in $(seq 1 35); do
+            if curl --silent --show-error --fail http://127.0.0.1:3000/health -o health.json; then
+              healthy=1
+              break
+            fi
+            sleep 2
+          done
+          if [ "$healthy" != 1 ]; then
+            echo "API did not become healthy"
+            exit 1
+          fi
+          node -e 'const x=require("./health.json"); if(x.ok!==true || x.service!=="backend") process.exit(1)'
+
+          depth_ready=0
+          for i in $(seq 1 10); do
+            if curl --silent --show-error --fail http://127.0.0.1:3000/depth/BTCUSDT -o depth.json; then
+              depth_ready=1
+              break
+            fi
+            sleep 2
+          done
+          if [ "$depth_ready" != 1 ]; then
+            echo "API could not communicate with matching engine"
+            exit 1
+          fi

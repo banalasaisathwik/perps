@@ -10,6 +10,7 @@ import { getOpenOrders } from "./handler/getOpenOrders";
 import { getMarkPrice } from "./handler/getMarkPrice";
 import { MARK_PRICES } from "./store/memory";
 import { connectOrderBookPublisher, publishOrderBookSnapshot } from "./redis/orderBookPublisher";
+import { connectRedisClient, loadRedisConfig } from "../../shared/redis-config";
 
 export type EngineCommandType =
   | "create_order"
@@ -42,17 +43,19 @@ export interface EngineResponse {
   error?: string;
 }
 
-const brokerClient = createClient({ url: process.env.REDIS_URL }).on("error", (error) => {
+const { clientOptions, startupTimeout } = loadRedisConfig();
+
+const brokerClient = createClient(clientOptions).on("error", (error) => {
   console.error("Redis broker client error", error);
 });
 
-const responseClient = createClient({ url: process.env.REDIS_URL }).on("error", (error) => {
+const responseClient = createClient(clientOptions).on("error", (error) => {
   console.error("Redis response client error", error);
 });
 
 await Promise.all([
-  brokerClient.connect(),
-  responseClient.connect(),
+  connectRedisClient(brokerClient, "Redis engine broker", startupTimeout),
+  connectRedisClient(responseClient, "Redis engine responses", startupTimeout),
   connectOrderBookPublisher(),
 ]);
 
@@ -62,7 +65,11 @@ const markPriceStream =
   process.env.REDIS_STREAM_MARK_PRICE ?? "perps:market:mark-price";
 
 async function sendResponse(responseQueue: string, response: EngineResponse): Promise<void> {
-  await responseClient.xAdd(responseQueue, "*", { data: JSON.stringify(response) });
+  await responseClient.xAdd(
+    responseQueue,
+    "*",
+    { data: JSON.stringify(response) },
+  );
 }
 
 function handleEngineRequest(message: OrderRequest): unknown {
@@ -117,69 +124,93 @@ const lastIds = new Map<string, string>([
 ]);
 
 for (;;) {
-  const response = await brokerClient.xRead(
-    [
-      { key: engineCommandStream, id: lastIds.get(engineCommandStream) ?? "$" },
-      { key: markPriceStream, id: lastIds.get(markPriceStream) ?? "$" },
-    ],
-    { COUNT: 1, BLOCK: 2000 }
-  ) as unknown as RedisXReadResponse;
+  try {
+    const response = await brokerClient.xRead(
+      [
+        { key: engineCommandStream, id: lastIds.get(engineCommandStream) ?? "$" },
+        { key: markPriceStream, id: lastIds.get(markPriceStream) ?? "$" },
+      ],
+      { COUNT: 1, BLOCK: 2000 },
+    ) as unknown as RedisXReadResponse;
 
-  if (!response || response.length === 0) {
-    continue;
-  }
-
-  for (const stream of response) {
-    if (!stream.messages || stream.messages.length === 0) {
+    if (!response || response.length === 0) {
       continue;
     }
 
-    for (const entry of stream.messages) {
-      lastIds.set(stream.name, entry.id);
-
-      const rawPayload = entry.message.data;
-      if (!rawPayload) {
-        console.error("Skipping message: No data field present in stream object.");
+    for (const stream of response) {
+      if (!stream.messages || stream.messages.length === 0) {
         continue;
       }
 
-      let message: BrokerMessage;
+      for (const entry of stream.messages) {
+        lastIds.set(stream.name, entry.id);
 
-      try {
-        message = JSON.parse(rawPayload) as BrokerMessage;
-      } catch {
-        console.error("Skipping invalid broker message format");
-        continue;
-      }
-
-      if (message.type === "mark_price") {
-        try {
-          MARK_PRICES.set(message.symbol, message.latestPrice);
-          liquidation(message);
-        } catch (error) {
-          console.error("Failed mark price execution", error);
+        const rawPayload = entry.message.data;
+        if (!rawPayload) {
+          console.error("Skipping message: No data field present in stream object.");
+          continue;
         }
-        continue;
-      }
 
-      try {
-        console.log(
-          `[engine] command ${message.type} correlationId=${message.correlationId}`,
-        );
-        const data = handleEngineRequest(message);
+        let message: BrokerMessage;
 
-        await sendResponse(message.responseQueue, {
-          correlationId: message.correlationId,
-          ok: true,
-          data,
-        });
-      } catch (error) {
-        await sendResponse(message.responseQueue, {
-          correlationId: message.correlationId,
-          ok: false,
-          error: error instanceof Error ? error.message : "engine_error",
-        });
+        try {
+          message = JSON.parse(rawPayload) as BrokerMessage;
+        } catch {
+          console.error("Skipping invalid broker message format");
+          continue;
+        }
+
+        if (message.type === "mark_price") {
+          try {
+            MARK_PRICES.set(message.symbol, message.latestPrice);
+            liquidation(message);
+          } catch (error) {
+            console.error("Failed mark price execution", error);
+          }
+          continue;
+        }
+
+        let engineResponse: EngineResponse;
+        try {
+          console.log(
+            `[engine] command ${message.type} correlationId=${message.correlationId}`,
+          );
+          const data = handleEngineRequest(message);
+
+          engineResponse = {
+            correlationId: message.correlationId,
+            ok: true,
+            data,
+          };
+        } catch (error) {
+          engineResponse = {
+            correlationId: message.correlationId,
+            ok: false,
+            error: error instanceof Error ? error.message : "engine_error",
+          };
+        }
+
+        try {
+          await sendResponse(message.responseQueue, engineResponse);
+        } catch (error) {
+          console.error("Failed to publish engine response", error);
+          // The command is retained for diagnosis; never discard it merely
+          // because the response could not be published.
+          continue;
+        }
+
+        // Command entries must not be MAXLEN-trimmed: an overloaded engine
+        // could otherwise silently drop unprocessed orders/cancellations.
+        // Remove the command only after its response was published.
+        try {
+          await brokerClient.xDel(engineCommandStream, entry.id);
+        } catch (error) {
+          console.error("Failed to remove processed engine command", error);
+        }
       }
     }
+  } catch (error) {
+    console.error("Engine Redis stream read failed", error);
+    await new Promise((resolve) => setTimeout(resolve, 1_000));
   }
 }

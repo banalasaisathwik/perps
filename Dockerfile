@@ -5,10 +5,17 @@ FROM oven/bun:1
 
 WORKDIR /app
 
+# concurrently uses `ps` to terminate sibling process trees when one service
+# fails. The Bun base image does not include it.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends procps \
+    && rm -rf /var/lib/apt/lists/*
+
 COPY package.json bun.lock* ./
 COPY backend/package.json backend/bun.lock* ./backend/
 COPY engine/package.json engine/bun.lock* ./engine/
 COPY binance-events-backend/package.json binance-events-backend/bun.lock* ./binance-events-backend/
+COPY shared ./shared
 
 # backend's postinstall runs `prisma generate`, which needs the schema file
 # present before `bun install` runs below.

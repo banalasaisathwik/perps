@@ -25,11 +25,21 @@ export function waitForEngineResponse(
   });
 }
 
-export function resolveEngineResponse(response: EngineResponse): void {
+export function resolveEngineResponse(response: EngineResponse): boolean {
   const pending = pendingResponses.get(response.correlationId);
-  if (!pending) return;
+  if (!pending) return false;
 
   clearTimeout(pending.timeout);
   pendingResponses.delete(response.correlationId);
   pending.resolve(response);
+  return true;
+}
+
+export function rejectEngineResponse(correlationId: string, error: Error): void {
+  const pending = pendingResponses.get(correlationId);
+  if (!pending) return;
+
+  clearTimeout(pending.timeout);
+  pendingResponses.delete(correlationId);
+  pending.reject(error);
 }
